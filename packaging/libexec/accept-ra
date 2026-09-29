@@ -1,0 +1,79 @@
+#!/bin/sh
+# Keeps the host's own IPv6 working once Drawbridge turns on IPv6 forwarding (docs/PLAN.md
+# §5.5). With forwarding on, the kernel ignores Router Advertisements on an interface whose
+# accept_ra is 1, so a host that gets its address and default route from the kernel's own
+# SLAAC (ifupdown, for one) loses both. accept_ra=2 accepts them regardless.
+#
+# The package's postinst runs this as root, before it enables forwarding. It sets accept_ra
+# to 2 on each uplink whose value is 1, now and at every boot, through a drop-in that
+# postrm removes. NetworkManager and systemd-networkd process Router Advertisements
+# themselves and set accept_ra to 0, so their interfaces are left alone.
+#
+# DRAWBRIDGE_SYSCTL_DIR overrides where the drop-in goes (the tests use it).
+set -eu
+
+dropin="${DRAWBRIDGE_SYSCTL_DIR:-/etc/sysctl.d}/91-drawbridge-accept-ra.conf"
+conf=/proc/sys/net/ipv6/conf
+
+# Interface names the default routes use, IPv6 first. The IPv4 default route is the
+# fallback for an upgrade where the IPv6 one is already gone.
+uplinks() {
+	for fam in -6 -4; do
+		ip "$fam" route show default 2>/dev/null | while read -r line; do
+			set -- $line
+			while [ $# -gt 1 ]; do
+				[ "$1" = dev ] && echo "$2"
+				shift
+			done
+		done
+	done | sort -u
+}
+
+# The interfaces the previous run listed, so an upgrade keeps them.
+listed() {
+	[ -f "$dropin" ] || return 0
+	sed -n 's|^net/ipv6/conf/\([^/]*\)/accept_ra = 2$|\1|p' "$dropin"
+}
+
+valid() {
+	case $1 in
+	'' | *[!A-Za-z0-9_.:@-]*) return 1 ;;
+	esac
+}
+
+need=$(
+	for dev in $(uplinks); do
+		valid "$dev" && [ "$(cat "$conf/$dev/accept_ra" 2>/dev/null)" = 1 ] && echo "$dev"
+	done
+	for dev in $(listed); do
+		valid "$dev" && [ "$(cat "$conf/$dev/accept_ra" 2>/dev/null)" = 2 ] && echo "$dev"
+	done
+	true
+)
+need=$(echo "$need" | sort -u | sed '/^$/d')
+
+if [ -z "$need" ]; then
+	rm -f "$dropin"
+	exit 0
+fi
+
+mkdir -p "$(dirname "$dropin")"
+tmp="$dropin.new"
+{
+	echo "# Written by the drawbridge package (docs/PLAN.md §5.5): with IPv6 forwarding on, the"
+	echo "# kernel ignores Router Advertisements where accept_ra is 1. Removing the package"
+	echo "# removes this file."
+	for dev in $need; do
+		echo "net/ipv6/conf/$dev/accept_ra = 2"
+	done
+} >"$tmp"
+chmod 0644 "$tmp"
+mv "$tmp" "$dropin"
+
+for dev in $need; do
+	if echo 2 >"$conf/$dev/accept_ra" 2>/dev/null; then
+		echo "drawbridge: set accept_ra=2 on $dev, so IPv6 forwarding keeps the host's own IPv6"
+	else
+		echo "drawbridge: couldn't set accept_ra=2 on $dev now; it's set at the next boot" >&2
+	fi
+done

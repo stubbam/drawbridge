@@ -60,7 +60,7 @@ setups that need them.
 | Userland packages | `nftables` (a dependency) and `wireguard-tools` (recommended, for debugging with `wg show`). |
 | Network | A public IPv4 address with UDP 51820 forwarded to the host, or an IPv6 endpoint the router lets through; a DNS name that stays current (a dynamic DNS client if the public IPv4 address changes, since Drawbridge doesn't update DNS); for IPv6, a **stable** host address (not a temporary/privacy one). |
 | Network stack | NetworkManager, systemd-networkd, or ifupdown. On ifupdown hosts the installer sets `accept_ra=2` on the uplink (§5.5). |
-| Other services | Drawbridge uses only UDP 51820 and TCP 51821, so it coexists with a DNS resolver (port 53), web servers and reverse proxies (80, 443), and admin UIs like AdGuard Home's (3000). The default client DNS needs a resolver listening on the host's VPN addresses (§6.3). |
+| Other services | Drawbridge uses only UDP 51820 and TCP 51821, so it coexists with a DNS resolver (port 53), web servers and reverse proxies (80, 443), and admin UIs like AdGuard Home's (3000). Using the host's own resolver as the clients' DNS needs it listening on the VPN addresses; setup checks (§6.3). |
 | Uplink name | Not hard-coded (`eth0`, `end0`, `wlan0`, …). It's detected from the default routes. |
 | Storage | microSD or SSD. Write volume is kept low by default to limit SD card wear, and configurable for SSDs (§6.4). |
 
@@ -86,7 +86,7 @@ and lets it in over IPv6. The kernel integration tests also run on Ubuntu 24.04 
 | D9 | Live updates in the UI | **Server-Sent Events (SSE)** | Simpler than WebSockets and sufficient for one-way status pushes. |
 | D10 | Distribution | A **`.deb` built with nfpm** for arm64 (plus amd64 for VM testing), published as a GitHub Release | Installs and upgrades natively with `apt`/`dpkg`. |
 | D11 | Admin UI exposure | **Home network and VPN only** (decided), enforced both in the app and in nftables. The admin may add extra private-range sources, such as a Tailscale tailnet, as a setting (2026-09-26) | Anyone who controls the UI can reach the whole home network, so it must never face the internet. Two independent layers keep it off the internet even if one is misconfigured. |
-| D12 | Client DNS | **A resolver on the host, such as AdGuard Home** (decided), by default the server's VPN addresses; optional AdGuard Home integration syncs client names through its REST API (M4) | Ad-blocking and per-client DNS query logs for VPN clients, with no second resolver to run. The default assumes a resolver listens on the VPN addresses; a setup-wizard DNS step is planned for hosts without one (`docs/REQUIREMENTS.md`). |
+| D12 | Client DNS | **Public resolvers by default; a resolver on the host, such as AdGuard Home, when one answers on the VPN addresses** (decided; amended 2026-09-29); optional AdGuard Home integration syncs client names through its REST API (M4) | Ad-blocking and per-client DNS query logs for VPN clients, with no second resolver to run, on hosts that have one; a working default on hosts that don't. The setup wizard and Settings check the VPN addresses (`GET /api/server/dns-check`) and preselect the host only when it answers. |
 
 ---
 
@@ -476,15 +476,23 @@ Drawbridge doesn't install or manage a resolver. When the host already runs one 
 addresses (AdGuard Home, Pi-hole, Unbound, dnsmasq), it becomes the clients' resolver, and
 AdGuard Home in particular gets an optional integration (below).
 
-- **Default for new clients:** *This server*, which puts the server's VPN addresses
-  (`10.8.0.1` and `fd…::1`) on the `DNS =` line. Other presets stay available for individual
-  clients: *Cloudflare*, *Quad9*, *Google*, *Custom*, or *None*. Each preset has IPv4 and IPv6
-  addresses.
-  - **Known limitation:** this default assumes a resolver listens on the VPN addresses. On a host
-    without one, clients connect but can't resolve names; systemd-resolved's stub listens on
-    `127.0.0.53` only, so it doesn't help. The planned fix is a DNS step in the setup wizard
-    (§9) and a default that points at the host only when something answers there.
-    `docs/REQUIREMENTS.md` has the workaround meanwhile.
+- **Default for new clients:** Cloudflare's public resolvers (`1.1.1.1` and `1.0.0.1`, plus the
+  IPv6 pair when the VPN has IPv6), because they work on any host. *This server* (the server's VPN
+  addresses, `10.8.0.1` and `fd…::1`) is a choice the admin makes, and only after the server has
+  checked that something answers DNS there. The other choices are *Other servers* and *None*.
+  Each preset has IPv4 and IPv6 addresses.
+  - **The check** (`GET /api/server/dns-check`): the daemon sends a UDP DNS query for
+    `example.com` (an A record, recursion desired) to each VPN address on port 53, in parallel,
+    and waits two seconds. NOERROR and NXDOMAIN count as an answer. REFUSED and SERVFAIL mean a
+    resolver is listening but unusable (its access settings may exclude the VPN, or its upstream
+    servers are down); a refused connection means nothing is listening; silence means a firewall
+    or a stopped tunnel. Each address is reported on its own, and "this server" saves only the
+    ones that answered, so a resolver bound to IPv4 alone doesn't leave clients waiting on an IPv6
+    address that never replies. systemd-resolved's stub listens on `127.0.0.53` only, so the
+    check finds nothing there.
+  - **The setup wizard** (§9) runs the check on its DNS step and preselects *This server* when it
+    finds an address that answers; otherwise it preselects the public resolvers. Settings has the
+    same choices and a check button.
 - Optional **search domains** (written to the `DNS =` line; `wg-quick` supports them, and support
   varies across the client apps).
 - **Per-client override.**
@@ -580,7 +588,8 @@ stateDiagram-v2
   - A one-time **setup token** is printed by `postinst` and to the journal
     (`drawbridge admin setup-token` shows it again). This stops anyone else on the LAN from claiming
     the admin account first.
-  - The wizard creates the admin account, then asks for the endpoint FQDN, subnets, and DNS.
+  - The wizard creates the admin account, then asks for the endpoint FQDN and the clients' DNS
+    (subnets aren't asked yet).
 - **Passwords:** hashed with Argon2id (RFC 9106's 64 MiB, three-pass profile, one hash at a
   time so logins can't exhaust the host's memory), in the PHC string format. A password needs at
   least 10 characters; there are no composition rules.
@@ -721,6 +730,7 @@ GET    /api/auth/sessions                DELETE /api/auth/sessions/{id}
 
 GET    /api/server                       PATCH /api/server    (settings)
 GET    /api/server/status                tunnel up or down, client counts (M3)
+GET    /api/server/dns-check             asks the VPN addresses for DNS; which ones answer
 
 GET    /api/clients                      POST /api/clients
 GET    /api/clients/{id}                 PATCH /api/clients/{id} (rename)   DELETE /api/clients/{id}
@@ -758,7 +768,7 @@ can be added later (i18n).
 
 | Page | Contents |
 |---|---|
-| **Setup wizard** | Setup token → admin account → endpoint FQDN → subnets (IPv4/IPv6) → DNS → done |
+| **Setup wizard** | Setup token → admin account → endpoint FQDN → DNS (with a check of the host's resolver) → done. A subnets step (IPv4/IPv6) is planned. |
 | **Login** | Username, password, and TOTP code |
 | **Dashboard** | Server card (up/down, endpoint, public key, port, addresses), client counts (total / online / paused / outdated), client list sortable by name or status (each connected client's endpoint address, session and total traffic), total throughput chart, recent events, diagnostics warnings |
 | **Clients** | Searchable, filterable list, sortable by name, status, last handshake, or IP address: status dot, name, addresses, last handshake, endpoint, RX/TX, pause toggle, and quick actions (QR, download, edit, delete) |
@@ -967,7 +977,7 @@ Each milestone ends in a usable, tested state.
 ### M3: Web UI MVP → **v0.1**
 
 - The setup wizard, login, dashboard, client list and detail, add/edit/pause/delete, download and
-  QR, server settings, DNS settings (the server's VPN addresses as the default resolver), and live
+  QR, server settings, DNS settings (public resolvers by default, with a check for a resolver on the host), and live
   status. *Built. Live status polls every 5 seconds while the page is visible; the SSE stream
   (§8, ADR 0009) arrives with monitoring in M4. The System page (diagnostics, backup, TLS) is
   M5; M3's Account page covers the password and sessions. On real hardware:
@@ -1043,7 +1053,7 @@ Each milestone ends in a usable, tested state.
 | The AAAA record points at a temporary IPv6 address | A static AAAA record for the stable address is recommended, and diagnostics warn about temporary addresses |
 | CGNAT or DS-Lite (no inbound IPv4) | Documented: use an IPv6-only endpoint or a relay VPS |
 | The router's IPv6 firewall lets inbound traffic reach the host | The admin UI is blocked from non-LAN, non-VPN sources both in the app and in Drawbridge's nftables table |
-| No resolver answers on the VPN addresses (the default client DNS) | Documented with a workaround (`docs/REQUIREMENTS.md`); planned: a setup-wizard DNS step, and diagnostics that send test queries to both VPN addresses, with fix hints for AdGuard Home's `bind_hosts` and startup order |
+| No resolver answers on the VPN addresses | New servers default to public resolvers, and the wizard and Settings check the VPN addresses before offering them (§6.3). Planned: diagnostics that repeat the check, with fix hints for AdGuard Home's `bind_hosts` and startup order |
 | AdGuard Home is down or its API changes | VPN management doesn't depend on it. Name sync retries, and the integration is tested against the real AdGuard Home before each release |
 | SD card wear from logging | Batched writes, downsampling, retention limits, and a write budget test. An SSD is recommended where available |
 | No battery-backed clock, so the time is wrong at boot | timesyncd check in diagnostics. TOTP allows ±1 time step |
@@ -1063,7 +1073,7 @@ Each milestone ends in a usable, tested state.
 | Network defaults | NAT44 and NAT66 | They work with any ISP and router. Routed IPv4 and routed IPv6 are later options (§5.2, §5.3) |
 | Dynamic DNS | Not built in | Existing clients (ddclient, or a router's built-in one) cover it. Diagnostics check the A and AAAA records (§5.6) |
 | Admin UI exposure | Home network and VPN only, never the internet; plus extra private-range sources the admin adds, such as a Tailscale tailnet | D11: enforced in the app and in nftables (§5.3, §6.5) |
-| DNS | A resolver on the host (such as AdGuard Home) by default, at the server's VPN addresses | D12: default client DNS, and optional AdGuard Home name sync and per-client DNS logs (§6.3). Known limitation on hosts without a resolver, with a planned fix (§6.3) |
+| DNS | Public resolvers by default; a resolver on the host (such as AdGuard Home) at the server's VPN addresses when a check finds one answering | D12: the wizard offers the host's resolver only when it works, and there's optional AdGuard Home name sync and per-client DNS logs (§6.3) |
 | Network stack | NetworkManager, systemd-networkd, or ifupdown | The installer marks `wg0` unmanaged for NetworkManager. On ifupdown hosts the installer sets `accept_ra=2` on the uplink (§5.5) |
 | Admins | One admin account (default) | Multiple admins stay optional (M6) |
 | Client private keys | Stored on the server (default) | Configs can be downloaded again at any time |

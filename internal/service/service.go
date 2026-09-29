@@ -35,6 +35,9 @@ type Service struct {
 	Sessions SessionPolicy
 	// Now is the clock; nil means time.Now.
 	Now func() time.Time
+	// DNSProbe tests one resolver address for ProbeDNS; nil sends a real query to port 53.
+	// The fake backend and the tests replace it.
+	DNSProbe func(ctx context.Context, addr netip.Addr) DNSProbe
 
 	// TrafficRawInterval, TrafficRawRetention, and TrafficHourlyRetention configure the
 	// traffic-history sampler (traffic.go); zero means the Default* constant there. They

@@ -167,6 +167,15 @@ func (h *handler) patchServer(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, views.NewSettingsResult(s, applied))
 }
 
+func (h *handler) dnsCheck(w http.ResponseWriter, r *http.Request) {
+	probes, err := h.svc.ProbeDNS(r.Context())
+	if err != nil {
+		h.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, views.NewDNSCheck(probes))
+}
+
 func (h *handler) serverStatus(w http.ResponseWriter, r *http.Request) {
 	st, err := h.svc.Status(r.Context())
 	if err != nil {

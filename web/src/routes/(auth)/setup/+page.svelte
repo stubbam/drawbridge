@@ -4,16 +4,22 @@
 	import { resolve } from '$app/paths';
 	import { api, type Settings } from '$lib/api';
 	import { errorMessage } from '$lib/errors';
+	import DNSFields from '$lib/components/DNSFields.svelte';
 	import Result from '$lib/components/Result.svelte';
+	import { dnsFor, dnsModeOf, type DNSMode } from '$lib/dns';
 
-	// Step 1 creates the admin account; step 2 sets the endpoint clients connect to.
-	let step = $state<1 | 2>(1);
+	// Step 1 creates the admin account, step 2 sets the endpoint clients connect to, and step 3
+	// picks the DNS they use.
+	let step = $state<1 | 2 | 3>(1);
 	let token = $state('');
 	let username = $state('admin');
 	let password = $state('');
 	let confirm = $state('');
 	let endpoint = $state('');
 	let settings = $state<Settings>();
+	let dnsMode = $state<DNSMode>('public');
+	let dnsCustom = $state('');
+	let dnsUsable = $state<string[]>([]);
 	let error = $state('');
 	let busy = $state(false);
 
@@ -50,7 +56,25 @@
 		error = '';
 		busy = true;
 		try {
-			if (endpoint.trim()) await api.updateServer({ endpoint_host: endpoint.trim() });
+			if (endpoint.trim())
+				settings = (await api.updateServer({ endpoint_host: endpoint.trim() })).settings;
+			dnsMode = dnsModeOf(settings!);
+			step = 3;
+		} catch (err) {
+			error = errorMessage(err);
+		} finally {
+			busy = false;
+		}
+	}
+
+	async function saveDNS(e: SubmitEvent) {
+		e.preventDefault();
+		if (!settings) return;
+		error = '';
+		busy = true;
+		try {
+			const dns = dnsFor(settings, dnsMode, dnsCustom, dnsUsable);
+			if (dns.join() !== settings.dns.join()) await api.updateServer({ dns });
 			await goto(resolve('/'));
 		} catch (err) {
 			error = errorMessage(err);
@@ -66,7 +90,7 @@
 	<form class="card flex flex-col gap-4" onsubmit={createAccount}>
 		<div>
 			<h2 class="text-lg font-semibold">Create the Admin Account</h2>
-			<p class="hint">Step 1 of 2</p>
+			<p class="hint">Step 1 of 3</p>
 		</div>
 		<div>
 			<label class="label" for="token">Setup token</label>
@@ -123,11 +147,11 @@
 			{busy ? 'Creating…' : 'Create Account'}
 		</button>
 	</form>
-{:else}
+{:else if step === 2}
 	<form class="card flex flex-col gap-4" onsubmit={saveEndpoint}>
 		<div>
 			<h2 class="text-lg font-semibold">Where Clients Connect</h2>
-			<p class="hint">Step 2 of 2</p>
+			<p class="hint">Step 2 of 3</p>
 		</div>
 		<div>
 			<label class="label" for="endpoint">Public address</label>
@@ -145,6 +169,28 @@
 				You can change it later in Settings.
 			</p>
 		</div>
+		<Result {error} />
+		<div class="flex gap-2">
+			<button class="btn btn-primary flex-1" type="submit" disabled={busy}>Continue</button>
+		</div>
+	</form>
+{:else if settings}
+	<form class="card flex flex-col gap-4" onsubmit={saveDNS}>
+		<div>
+			<h2 class="text-lg font-semibold">DNS for Clients</h2>
+			<p class="hint">Step 3 of 3</p>
+		</div>
+		<p class="text-sm text-neutral-600 dark:text-neutral-300">
+			Clients look up names through the servers you pick here. You can change this later in
+			Settings.
+		</p>
+		<DNSFields
+			{settings}
+			bind:mode={dnsMode}
+			bind:custom={dnsCustom}
+			onchecked={(u) => (dnsUsable = u)}
+			autoCheck
+		/>
 		<Result {error} />
 		<div class="flex gap-2">
 			<button class="btn btn-primary flex-1" type="submit" disabled={busy}>Finish</button>

@@ -12,6 +12,7 @@ import (
 	"net/netip"
 	"net/url"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -21,6 +22,7 @@ import (
 	"github.com/stuffam/drawbridge/internal/auth"
 	"github.com/stuffam/drawbridge/internal/firewall"
 	"github.com/stuffam/drawbridge/internal/keys"
+	"github.com/stuffam/drawbridge/internal/model"
 	"github.com/stuffam/drawbridge/internal/reconcile"
 	"github.com/stuffam/drawbridge/internal/service"
 	"github.com/stuffam/drawbridge/internal/store"
@@ -601,4 +603,56 @@ func mustURL(t *testing.T, s string) *url.URL {
 		t.Fatal(err)
 	}
 	return u
+}
+
+// A fresh server points clients at a public resolver, since nothing may answer on the VPN
+// addresses. The check finds out, and the admin's choice lands in the settings and the
+// event log.
+func TestDNSCheckAndChoice(t *testing.T) {
+	svc := newService(t)
+	// A resolver that answers on IPv4 only, as a service bound to 0.0.0.0 would.
+	svc.DNSProbe = func(_ context.Context, a netip.Addr) service.DNSProbe {
+		return service.DNSProbe{Answered: a.Is4(), Detail: "probed " + a.String()}
+	}
+	srv := newServer(t, svc)
+	b, _ := loggedIn(t, svc, srv)
+
+	var settings views.SettingsView
+	b.expect(http.StatusOK, "GET", "/api/server", nil).decode(t, &settings)
+	if want := model.PublicDNS(true); !slices.Equal(settings.DNS, want) {
+		t.Fatalf("a new server's DNS = %v, want the public resolvers %v", settings.DNS, want)
+	}
+
+	var check views.DNSCheck
+	b.expect(http.StatusOK, "GET", "/api/server/dns-check", nil).decode(t, &check)
+	if len(check.Results) != 2 || !check.Results[0].Answered || check.Results[1].Answered ||
+		!check.Results[0].Address.Is4() || !check.Results[1].Address.Is6() {
+		t.Fatalf("results %+v, want IPv4 answered and IPv6 not", check.Results)
+	}
+	if !slices.Equal(check.Usable, []netip.Addr{settings.IPv4Address}) {
+		t.Fatalf("usable %v, want only %v", check.Usable, settings.IPv4Address)
+	}
+
+	// The wizard saves the usable addresses as the clients' DNS.
+	res := b.expect(http.StatusOK, "PATCH", "/api/server", views.SettingsPatch{DNS: &check.Usable})
+	var patched views.SettingsResult
+	res.decode(t, &patched)
+	if !slices.Equal(patched.Settings.DNS, check.Usable) {
+		t.Fatalf("saved DNS %v, want %v", patched.Settings.DNS, check.Usable)
+	}
+	var events []views.EventView
+	b.expect(http.StatusOK, "GET", "/api/events?category=admin&limit=1", nil).decode(t, &events)
+	if len(events) != 1 || events[0].Kind != "server.settings_changed" || !strings.Contains(events[0].Data["dns"], "→ [10.8.0.1]") {
+		t.Fatalf("events %+v, want a settings change that records the DNS change", events)
+	}
+
+	// A client's config carries what the admin chose.
+	host := "vpn.example.com"
+	b.expect(http.StatusOK, "PATCH", "/api/server", views.SettingsPatch{EndpointHost: &host})
+	var created views.ClientResult
+	b.expect(http.StatusCreated, "POST", "/api/clients", views.NewClientRequest{Name: "phone"}).decode(t, &created)
+	cfg := b.expect(http.StatusOK, "GET", "/api/clients/"+created.Client.ID+"/config", nil)
+	if !strings.Contains(string(cfg.body), "\nDNS = 10.8.0.1\n") {
+		t.Fatalf("client config:\n%s", cfg.body)
+	}
 }

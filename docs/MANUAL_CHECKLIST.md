@@ -8,7 +8,7 @@ real one.
 Results marked verified ran on the reference platform (docs/PLAN.md §2): a Raspberry Pi 5
 running Debian 13 (arm64), with NetworkManager managing the network, AdGuard Home on the host as
 the clients' resolver, and a consumer router. On a different setup, check docs/REQUIREMENTS.md
-first: some steps (DNS, IPv6 on an ifupdown host) need a workaround there.
+first: some steps (IPv6 on an ifupdown host) need a workaround there.
 
 The tags matter, so keep them current when you touch the code a step describes:
 
@@ -257,6 +257,11 @@ M3's exit criteria: everything can be done from a phone or a desktop browser, in
 - `[VERIFIED 2026-09-27]` Settings → DNS "This server": a phone that downloads its config again
   gets the server's VPN addresses, and the resolver's query log (AdGuard Home's) shows its
   queries. This needs a resolver listening on the VPN addresses (docs/REQUIREMENTS.md).
+- `[UNVERIFIED]` First-run setup's DNS step, on a fresh install: with AdGuard Home listening on
+  all addresses, the check reports both VPN addresses answering and preselects *This server*.
+  With no resolver on the host, it reports nothing listening and preselects the public resolvers.
+  The unit and browser tests cover both outcomes with a stand-in resolver and the fake backend;
+  a real resolver on the host hasn't been asked.
 - `[VERIFIED 2026-09-27]` The same pages work on the phone itself, through the VPN at
   `https://10.8.0.1:51821`, and are usable at phone width.
 - `[VERIFIED 2026-09-27]` Account → the laptop's and the phone's sessions are listed; logging the

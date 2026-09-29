@@ -36,7 +36,7 @@ func serverCmd(ctx context.Context, args []string, stdout, stderr io.Writer) int
 	endpoint := flags.String("endpoint", "", "public `host[:port]` clients connect to, such as vpn.example.com")
 	port := flags.Uint("port", 0, "UDP listen `port`")
 	mtu := flags.Int("mtu", 0, "tunnel MTU, 1280–1500")
-	dns := flags.String("dns", "", "DNS servers for clients: comma-separated `addresses`, \"default\" (the server's VPN addresses, which works only if a DNS resolver such as AdGuard Home listens on them), or \"none\"")
+	dns := flags.String("dns", "", "DNS servers for clients: comma-separated `addresses`, \"server\" (the server's VPN addresses, which works only if a DNS resolver such as AdGuard Home listens on them), or \"none\"")
 	keepalive := flags.Int("keepalive", -1, "clients' PersistentKeepalive in `seconds` (0 turns it off)")
 	isolation := flags.Bool("client-isolation", true, "block traffic between clients")
 	adminAllow := flags.String("admin-allow", "", "extra sources that may reach the web UI, besides the home network and the VPN: comma-separated `prefixes` inside 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 100.64.0.0/10 (Tailscale), or fc00::/7, or \"none\"")
@@ -91,7 +91,7 @@ func serverCmd(ctx context.Context, args []string, stdout, stderr io.Writer) int
 	}
 	if set["dns"] {
 		switch strings.TrimSpace(*dns) {
-		case "default":
+		case "server":
 			p.DNSDefault = true
 		case "none", "":
 			p.DNS = &[]netip.Addr{}

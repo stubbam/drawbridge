@@ -1,6 +1,6 @@
 # ADR 0012: A resolver on the host, such as AdGuard Home, as the clients' DNS
 
-- **Status:** Accepted (2026-09-26); amended 2026-09-28
+- **Status:** Accepted (2026-09-26); amended 2026-09-28 and 2026-09-29
 - **Plan reference:** docs/PLAN.md §3, D12
 
 ## Context
@@ -30,3 +30,12 @@ configurable) that syncs each client as a named persistent client and shows per-
   fix — a DNS step in the setup wizard, and a default that points at the host only when something
   answers there — docs/REQUIREMENTS.md tells admins to choose other servers in Settings before
   handing out configs.
+- **Amended 2026-09-29: public resolvers by default, and a check.** New servers now hand out
+  Cloudflare's public resolvers, because they work on every host. The server's VPN addresses
+  become the clients' DNS only when the admin chooses *This server*, and the setup wizard and
+  Settings first ask those addresses for a name (`GET /api/server/dns-check`, a UDP query for
+  `example.com` to port 53, two-second timeout) and preselect the host only when it answers.
+  Each address is checked on its own, and only the ones that answer are saved. The decision above
+  still holds for hosts that run a resolver; it is no longer the default for those that don't.
+  The CLI's `server set --dns` keyword for the server's addresses is now `server` (it was
+  `default`).

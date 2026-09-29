@@ -214,6 +214,16 @@ func openService(ctx context.Context, dbPath, secretPath string, fake bool, lanP
 		Hasher:  auth.NewHasher(auth.DefaultParams),
 		Limiter: auth.NewLimiter(),
 	}
+	if fake {
+		// No real resolver on the fake tunnel's addresses: pretend one answers on IPv4
+		// only, so the UI's "this server" path, and its IPv6 gap, can be tried.
+		svc.DNSProbe = func(_ context.Context, a netip.Addr) service.DNSProbe {
+			if a.Is4() {
+				return service.DNSProbe{Answered: true, Detail: "A resolver answered (fake backend)."}
+			}
+			return service.DNSProbe{Detail: "Nothing is listening for DNS on port 53 (fake backend)."}
+		}
+	}
 	return svc, func() { closeWG(); _ = st.Close() }, nil
 }
 

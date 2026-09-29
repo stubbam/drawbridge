@@ -74,8 +74,9 @@ type Settings struct {
 	IPv4         netip.Prefix
 	// IPv6 is the zero Prefix when the VPN has no IPv6 subnet.
 	IPv6 netip.Prefix
-	// DNS is the resolver list pushed to clients. By default it's the server's VPN
-	// addresses, which work only if a resolver (such as AdGuard Home) listens on them (D12).
+	// DNS is the resolver list pushed to clients. A new installation gets PublicDNS, which
+	// works anywhere; the setup wizard offers the server's VPN addresses when a resolver
+	// answers there (D12).
 	DNS              []netip.Addr
 	Keepalive        int
 	ClientIsolation  bool
@@ -102,11 +103,19 @@ func NewSettings(privateKey wgtypes.Key, ipv6 netip.Prefix) (Settings, error) {
 	if err != nil {
 		return Settings{}, err
 	}
-	s.DNS = []netip.Addr{srv.IPv4}
-	if srv.IPv6.IsValid() {
-		s.DNS = append(s.DNS, srv.IPv6)
-	}
+	s.DNS = PublicDNS(srv.IPv6.IsValid())
 	return s, s.Validate()
+}
+
+// PublicDNS returns the default client DNS servers for a new installation: Cloudflare's
+// public resolvers, over IPv4 and, when the VPN has an IPv6 subnet, IPv6. They work on any
+// host; the server's own VPN addresses work only where a resolver listens on them (D12).
+func PublicDNS(ipv6 bool) []netip.Addr {
+	dns := []netip.Addr{netip.MustParseAddr("1.1.1.1"), netip.MustParseAddr("1.0.0.1")}
+	if ipv6 {
+		dns = append(dns, netip.MustParseAddr("2606:4700:4700::1111"), netip.MustParseAddr("2606:4700:4700::1001"))
+	}
+	return dns
 }
 
 // VPNSubnets returns the VPN's subnets: IPv4, and IPv6 if it's on.

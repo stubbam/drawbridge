@@ -12,7 +12,8 @@ only the home network and the VPN can reach, from the command line
 
 **Before you install**, read [docs/REQUIREMENTS.md](docs/REQUIREMENTS.md): it lists what
 Drawbridge needs from the host and your network, and the setups where it needs a workaround
-(for example, a host without a local DNS resolver, or one that configures IPv6 with ifupdown).
+(for example, a host that configures IPv6 with ifupdown, or a router that won't forward
+UDP 51820).
 
 ## Building
 

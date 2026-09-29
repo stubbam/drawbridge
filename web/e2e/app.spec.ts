@@ -17,7 +17,9 @@ test.describe.configure({ mode: 'serial' });
 /** Where an element is on the page. */
 const box = async (l: Locator) => (await l.boundingBox())!;
 
-test('first-run setup creates the admin account and sets the endpoint', async ({ page }) => {
+test('first-run setup creates the admin account, sets the endpoint, and picks the DNS', async ({
+	page
+}) => {
 	const problems = watchConsole(page);
 	await page.goto('/');
 	await expect(page).toHaveURL(/\/setup$/);
@@ -32,10 +34,21 @@ test('first-run setup creates the admin account and sets the endpoint', async ({
 	await page.getByLabel('Setup token').fill(setupToken().toLowerCase());
 	await page.getByRole('button', { name: 'Create Account' }).click();
 	await page.getByLabel('Public address').fill('vpn.example.com');
+	await page.getByRole('button', { name: 'Continue' }).click();
+
+	// The fake backend has a resolver on the IPv4 address only, so the check finds that one,
+	// picks "This server", and says the IPv6 address has no answer.
+	await expect(page.getByRole('heading', { name: 'DNS for Clients' })).toBeVisible();
+	const check = page.getByTestId('dns-check');
+	await expect(check.getByText('10.8.0.1: answers')).toBeVisible();
+	await expect(check.getByText(/fd[0-9a-f:]+: no answer/)).toBeVisible();
+	await expect(page.getByRole('radio', { name: /This server/ })).toBeChecked();
 	await page.getByRole('button', { name: 'Finish' }).click();
 
 	await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible();
 	await expect(page.getByText('vpn.example.com:51820')).toBeVisible();
+	// Only the address that answered reaches the clients.
+	expect(cli('server', 'show')).toMatch(/^DNS:\s+10\.8\.0\.1$/m);
 	await navigate(page, 'Logs');
 	await expect(page.getByText('Completed setup')).toBeVisible();
 	expect(problems).toEqual([]);
@@ -63,6 +76,7 @@ test('clients: add, QR code, download, pause, rename, delete', async ({ page }) 
 	const conf = readFileSync((await download.path())!, 'utf8');
 	expect(conf).toContain('[Interface]');
 	expect(conf).toContain('Endpoint = vpn.example.com:51820');
+	expect(conf).toMatch(/^DNS = 10\.8\.0\.1$/m);
 
 	await page.getByRole('button', { name: 'Pause' }).click();
 	await expect(page.getByText('Paused. The client is out of the tunnel.')).toBeVisible();

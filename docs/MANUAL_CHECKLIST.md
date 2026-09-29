@@ -74,8 +74,9 @@ The host side:
   saved file and the live table carried the same revision, and no module failed to load.
 - `[VERIFIED 2026-09-26]` `sysctl net.ipv4.ip_forward net.ipv6.conf.all.forwarding` prints 1 for
   both, and the host still has its own global IPv6 address. That's because NetworkManager handles
-  Router Advertisements itself; on an ifupdown host, set `accept_ra=2` first
-  (docs/REQUIREMENTS.md), since the installer doesn't yet.
+  Router Advertisements itself (`accept_ra` is 0 on its uplink, so the installer leaves it
+  alone). `[UNVERIFIED]` on a real ifupdown host, where the installer should set `accept_ra=2`
+  on the uplink and keep its IPv6; the kernel integration tests cover the effect in namespaces.
 - `[VERIFIED 2026-09-26]` `nmcli device status` lists `wg0` as `unmanaged`.
 
 A phone, on mobile data with Wi-Fi off:

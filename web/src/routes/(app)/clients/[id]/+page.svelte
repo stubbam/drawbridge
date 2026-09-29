@@ -35,6 +35,8 @@
 	let events = $state<DrawbridgeEvent[]>([]);
 	let traffic = $state<TrafficSample[]>([]);
 	let trafficRange = $state<TrafficRange>('24h');
+	// The range `traffic` holds, which lags trafficRange until the new range's data arrives.
+	let trafficShown = $state<TrafficRange>('24h');
 	let sessions = $state<ClientSession[]>([]);
 	let missing = $state(false);
 	let now = $state(Date.now());
@@ -62,10 +64,16 @@
 
 	async function loadHistory() {
 		try {
-			[traffic, sessions] = await Promise.all([
-				api.clientTraffic(id, trafficRange),
+			const asked = trafficRange;
+			const [samples, recent] = await Promise.all([
+				api.clientTraffic(id, asked),
 				api.clientSessions(id, undefined, 20)
 			]);
+			sessions = recent;
+			// A slower response to an earlier range mustn't replace the current one.
+			if (asked !== trafficRange) return;
+			traffic = samples;
+			trafficShown = asked;
 		} catch {
 			// load() above already shows a real error; the history sections just stay as they were.
 		}
@@ -262,7 +270,7 @@
 			<h2 id="traffic-heading" class="font-semibold">Traffic</h2>
 			<RangeSelect id="client-traffic-range" bind:value={trafficRange} />
 		</div>
-		<TrafficChart data={traffic} title={client.name} />
+		<TrafficChart data={traffic} range={trafficShown} title={client.name} />
 	</section>
 
 	<section class="card flex flex-col gap-3" aria-labelledby="sessions-heading">

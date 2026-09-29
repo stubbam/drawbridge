@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { toUplotData } from './traffic';
+import { toUplotData, xRange } from './traffic';
 
 describe('toUplotData', () => {
 	it('converts samples into aligned timestamp/rx/tx arrays', () => {
@@ -17,5 +17,16 @@ describe('toUplotData', () => {
 
 	it('returns empty arrays for no data', () => {
 		expect(toUplotData([])).toEqual([[], [], []]);
+	});
+});
+
+describe('xRange', () => {
+	const now = Date.parse('2026-09-29T12:00:00.500Z');
+	const end = Date.parse('2026-09-29T12:00:00Z') / 1000;
+
+	it('spans the whole window ending now, whatever the data covers', () => {
+		expect(xRange('24h', now)).toEqual([end - 86400, end]);
+		expect(xRange('7d', now)).toEqual([end - 7 * 86400, end]);
+		expect(xRange('90d', now)).toEqual([end - 90 * 86400, end]);
 	});
 });

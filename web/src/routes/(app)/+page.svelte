@@ -25,6 +25,8 @@
 	let clients = $state<Client[]>([]);
 	let traffic = $state<TrafficSample[]>([]);
 	let trafficRange = $state<TrafficRange>('24h');
+	// The range `traffic` holds, which lags trafficRange until the new range's data arrives.
+	let trafficShown = $state<TrafficRange>('24h');
 	let version = $state<VersionInfo>();
 	let error = $state('');
 	let now = $state(Date.now());
@@ -41,7 +43,12 @@
 
 	async function loadTraffic() {
 		try {
-			traffic = await api.traffic(trafficRange);
+			const asked = trafficRange;
+			const samples = await api.traffic(asked);
+			// A slower response to an earlier range mustn't replace the current one.
+			if (asked !== trafficRange) return;
+			traffic = samples;
+			trafficShown = asked;
 		} catch {
 			// The chart just stays as it was; load() above already shows a real error.
 		}
@@ -141,7 +148,7 @@
 		<h2 id="throughput-heading" class="font-semibold">Total Throughput</h2>
 		<RangeSelect id="dashboard-range" bind:value={trafficRange} />
 	</div>
-	<TrafficChart data={traffic} title="Total, all clients" />
+	<TrafficChart data={traffic} range={trafficShown} title="Total, all clients" />
 </section>
 
 <div class="grid gap-6 lg:grid-cols-2">

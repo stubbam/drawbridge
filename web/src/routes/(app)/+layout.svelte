@@ -59,7 +59,7 @@
 
 <header class="border-b border-neutral-200 bg-white dark:border-neutral-800 dark:bg-neutral-900">
 	<div class="mx-auto flex max-w-5xl items-center gap-x-6 px-4 py-3">
-		<a href={resolve('/')} class="text-lg font-semibold tracking-tight">Drawbridge</a>
+		<a href={resolve('/')} class="text-2xl font-semibold tracking-tight">Drawbridge</a>
 		<nav class="ml-auto flex items-center gap-1" aria-label="Main">
 			<a
 				href={resolve('/clients')}

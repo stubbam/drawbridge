@@ -1,11 +1,19 @@
 <script lang="ts">
 	import uPlot from 'uplot';
 	import 'uplot/dist/uPlot.min.css';
-	import type { TrafficSample } from '$lib/api';
+	import type { TrafficRange, TrafficSample } from '$lib/api';
 	import { formatBytes } from '$lib/format';
-	import { toUplotData } from '$lib/traffic';
+	import { toUplotData, xRange } from '$lib/traffic';
 
-	let { data, title }: { data: TrafficSample[]; title: string } = $props();
+	let {
+		data,
+		range,
+		title
+	}: {
+		data: TrafficSample[];
+		/** The range `data` was loaded for. */ range: TrafficRange;
+		title: string;
+	} = $props();
 
 	let container: HTMLDivElement | undefined;
 	let chart: uPlot | undefined;
@@ -51,7 +59,7 @@
 				width: container.clientWidth || 300,
 				height: 220,
 				title,
-				scales: { x: { time: true } },
+				scales: { x: { time: true, range: () => xRange(range, Date.now()) } },
 				axes: [
 					{ stroke: c.text, grid: { stroke: c.grid } },
 					{ stroke: c.text, grid: { stroke: c.grid }, values: byBytes, size: axisSize }
@@ -78,7 +86,7 @@
 	}
 
 	$effect(() => {
-		// Re-reads `data` and `title`, so this reruns whenever either changes.
+		// Re-reads `data`, `range`, and `title`, so this reruns whenever any changes.
 		build();
 		return () => chart?.destroy();
 	});

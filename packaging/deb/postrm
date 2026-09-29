@@ -1,0 +1,12 @@
+#!/bin/sh
+set -e
+
+if [ -d /run/systemd/system ]; then
+	systemctl daemon-reload || true
+fi
+
+# Purge deletes Drawbridge's data and configuration. The system user stays, as Debian
+# policy asks, so file ownership stays consistent if it's installed again.
+if [ "$1" = "purge" ]; then
+	rm -rf /var/lib/drawbridge /etc/drawbridge
+fi

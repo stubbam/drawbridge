@@ -1,0 +1,64 @@
+#!/bin/sh
+set -e
+
+# Everything that needs root happens here, once; the daemon itself never runs as root
+# (ADR 0007).
+
+if [ "$1" = "configure" ]; then
+	# Create the system user from /usr/lib/sysusers.d/drawbridge.conf.
+	if command -v systemd-sysusers >/dev/null 2>&1; then
+		systemd-sysusers drawbridge.conf
+	elif ! getent passwd drawbridge >/dev/null; then
+		adduser --system --group --home /var/lib/drawbridge --no-create-home drawbridge
+	fi
+
+	# The key that encrypts private keys in the database. It's created once and kept
+	# across upgrades; only purge deletes it.
+	install -d -m 0750 -o root -g drawbridge /etc/drawbridge
+	if [ ! -e /etc/drawbridge/secret.key ]; then
+		(
+			umask 077
+			head -c 32 /dev/urandom >/etc/drawbridge/secret.key.new
+		)
+		chgrp drawbridge /etc/drawbridge/secret.key.new
+		chmod 0640 /etc/drawbridge/secret.key.new
+		mv /etc/drawbridge/secret.key.new /etc/drawbridge/secret.key
+	fi
+
+	# IP forwarding, now and at every boot (/usr/lib/sysctl.d/90-drawbridge.conf).
+	sysctl -q -p /usr/lib/sysctl.d/90-drawbridge.conf ||
+		echo "drawbridge: couldn't enable IP forwarding now; it's enabled at the next boot" >&2
+
+	# The WireGuard module, now and at every boot (/usr/lib/modules-load.d/drawbridge.conf).
+	if command -v modprobe >/dev/null 2>&1; then
+		modprobe wireguard ||
+			echo "drawbridge: couldn't load the wireguard kernel module" >&2
+	fi
+fi
+
+# Skip service handling where systemd isn't running, such as in a chroot or container.
+if [ -d /run/systemd/system ]; then
+	# Make NetworkManager read its drop-in, so it leaves wg0 alone.
+	if systemctl is-active --quiet NetworkManager.service && command -v nmcli >/dev/null 2>&1; then
+		nmcli general reload conf || true
+	fi
+	systemctl daemon-reload
+	systemctl enable drawbridge-tunnel.service drawbridge.service
+	# Start the tunnel if it isn't running; an upgrade leaves a running tunnel alone,
+	# and the restarted daemon applies any changes to it.
+	systemctl start drawbridge-tunnel.service
+	systemctl restart drawbridge.service
+
+	# Until the admin account exists, show where the web UI is and the one-time token
+	# that sets it up (docs/PLAN.md §6.5). After that, this prints nothing.
+	i=0
+	while [ ! -S /run/drawbridge/control.sock ] && [ "$i" -lt 20 ]; do
+		sleep 0.5
+		i=$((i + 1))
+	done
+	if token=$(drawbridge admin setup-token 2>/dev/null); then
+		echo
+		echo "$token"
+		echo
+	fi
+fi

@@ -1,0 +1,47 @@
+version: "2"
+
+issues:
+  # Report every issue; the defaults hide repeats.
+  max-issues-per-linter: 0
+  max-same-issues: 0
+
+linters:
+  default: standard
+  enable:
+    - bodyclose
+    - errorlint
+    - gosec
+    - misspell
+  exclusions:
+    # npm packages can ship Go files; they aren't Drawbridge's code.
+    paths:
+      - web/
+    presets:
+      # Unchecked Close, Flush, and fmt.Fprint* errors, as in most Go code.
+      - std-error-handling
+    rules:
+      # Tests write fixtures with deliberate permissions (some check that loose
+      # permissions are rejected) and read their own testdata.
+      - path: _test\.go
+        linters:
+          - gosec
+  settings:
+    gosec:
+      excludes:
+        # Unhandled errors. errcheck covers these, with the preset above.
+        - G104
+    misspell:
+      # U.S. English only (CLAUDE.md, "Conventions").
+      locale: US
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  exclusions:
+    paths:
+      - web/
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/stuffam/drawbridge

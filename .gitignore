@@ -1,0 +1,17 @@
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Sublime Text
+*.sublime-workspace
+
+# Build tools installed by `make tools`, and build output. `go build ./cmd/...` at the
+# root writes /drawbridge; `make build` writes dist/drawbridge.
+/bin/
+/dist/
+/drawbridge
+
+# `make web` copies the web app's build here; only the placeholder is tracked.
+/internal/webui/dist/*
+!/internal/webui/dist/.keep

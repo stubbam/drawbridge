@@ -1,0 +1,64 @@
+# nfpm package definition. `make deb` sets VERSION and ARCH, and stages that
+# architecture's binary at dist/package/drawbridge first (nfpm doesn't expand variables
+# in `contents` paths).
+name: drawbridge
+arch: ${ARCH}
+platform: linux
+version: ${VERSION}
+version_schema: semver
+section: net
+priority: optional
+maintainer: stuffam <248074566+stuffam@users.noreply.github.com>
+homepage: https://github.com/stuffam/drawbridge
+license: Apache-2.0
+description: |
+  Web manager for a WireGuard VPN server
+  Drawbridge manages a WireGuard server's clients, settings, and DNS from a
+  web UI, and runs natively under systemd without Docker.
+
+depends:
+  # Drawbridge applies its firewall and NAT rules with nft (ADR 0006).
+  - nftables
+recommends:
+  # `wg show` for debugging; Drawbridge itself talks to the kernel over netlink.
+  - wireguard-tools
+
+contents:
+  - src: dist/package/drawbridge
+    dst: /usr/bin/drawbridge
+    file_info:
+      mode: 0755
+  - src: packaging/systemd/drawbridge.service
+    dst: /usr/lib/systemd/system/drawbridge.service
+    file_info:
+      mode: 0644
+  - src: packaging/systemd/drawbridge-tunnel.service
+    dst: /usr/lib/systemd/system/drawbridge-tunnel.service
+    file_info:
+      mode: 0644
+  - src: packaging/sysusers/drawbridge.conf
+    dst: /usr/lib/sysusers.d/drawbridge.conf
+    file_info:
+      mode: 0644
+  - src: packaging/sysctl/90-drawbridge.conf
+    dst: /usr/lib/sysctl.d/90-drawbridge.conf
+    file_info:
+      mode: 0644
+  - src: packaging/modules-load/drawbridge.conf
+    dst: /usr/lib/modules-load.d/drawbridge.conf
+    file_info:
+      mode: 0644
+  - src: packaging/networkmanager/90-drawbridge.conf
+    dst: /usr/lib/NetworkManager/conf.d/90-drawbridge.conf
+    file_info:
+      mode: 0644
+  # Debian keeps each package's license at /usr/share/doc/<package>/copyright.
+  - src: LICENSE
+    dst: /usr/share/doc/drawbridge/copyright
+    file_info:
+      mode: 0644
+
+scripts:
+  postinstall: packaging/deb/postinst
+  preremove: packaging/deb/prerm
+  postremove: packaging/deb/postrm

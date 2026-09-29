@@ -1,0 +1,51 @@
+[Unit]
+Description=Drawbridge WireGuard tunnel
+Documentation=https://github.com/stuffam/drawbridge
+Wants=network-online.target
+# After nftables.service, whose ruleset starts with `flush ruleset`, so the table this
+# unit adds isn't flushed at boot.
+After=network-online.target nftables.service
+
+[Service]
+# The tunnel lives in the kernel, so there's nothing to keep running: `up` configures it
+# from the database and exits, and stopping the unit runs `down` (ADR 0008).
+Type=oneshot
+RemainAfterExit=yes
+User=drawbridge
+Group=drawbridge
+ExecStart=/usr/bin/drawbridge tunnel up
+ExecReload=/usr/bin/drawbridge tunnel up
+ExecStop=/usr/bin/drawbridge tunnel down
+
+AmbientCapabilities=CAP_NET_ADMIN
+CapabilityBoundingSet=CAP_NET_ADMIN
+
+# Sandboxing (docs/PLAN.md §4.2).
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+ProtectProc=invisible
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+StateDirectory=drawbridge
+StateDirectoryMode=0700
+RemoveIPC=yes
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

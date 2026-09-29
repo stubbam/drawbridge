@@ -1,0 +1,91 @@
+package service
+
+import (
+	"context"
+
+	"github.com/stuffam/drawbridge/internal/model"
+	"github.com/stuffam/drawbridge/internal/store"
+)
+
+// Where a change came from.
+const (
+	ViaWeb    = "web"
+	ViaCLI    = "cli"
+	ViaSystem = "system"
+)
+
+// Event categories (docs/PLAN.md §7).
+const (
+	CategoryAdmin      = "admin"
+	CategorySystem     = "system"
+	CategoryConnection = "connection"
+)
+
+// Actor is who asked for a change, for the event log.
+type Actor struct {
+	// Name is the admin's username, the CLI user's account name, or "drawbridge".
+	Name string
+	Via  string
+	// SourceIP is the web client's address; empty for the CLI and the daemon itself.
+	SourceIP string
+}
+
+type actorKey struct{}
+
+// WithActor returns a context that attributes changes to a.
+func WithActor(ctx context.Context, a Actor) context.Context {
+	return context.WithValue(ctx, actorKey{}, a)
+}
+
+// ActorFrom returns the context's actor: by default, the daemon itself.
+func ActorFrom(ctx context.Context) Actor {
+	if a, ok := ctx.Value(actorKey{}).(Actor); ok {
+		return a
+	}
+	return Actor{Name: "drawbridge", Via: ViaSystem}
+}
+
+// Event is an event to record. The actor comes from the context.
+type Event struct {
+	Kind string
+	// Category defaults to admin.
+	Category string
+	Client   *model.Client
+	Data     map[string]string
+	// Actor overrides the context's actor's name, for failed logins, where there's no
+	// logged-in user yet.
+	Actor string
+}
+
+// record appends an event to the log. The change it describes has already happened, so
+// a failure to record it is logged rather than returned.
+func (s *Service) record(ctx context.Context, e Event) {
+	a := ActorFrom(ctx)
+	se := store.Event{
+		Time:     s.now(),
+		Kind:     e.Kind,
+		Category: e.Category,
+		Actor:    a.Name,
+		Via:      a.Via,
+		SourceIP: a.SourceIP,
+		Data:     e.Data,
+	}
+	if se.Category == "" {
+		se.Category = CategoryAdmin
+	}
+	if e.Actor != "" {
+		se.Actor = e.Actor
+	}
+	if e.Client != nil {
+		se.ClientID, se.ClientName = e.Client.ID, e.Client.Name
+	}
+	// The event outlives the request that caused it.
+	if err := s.Store.AddEvent(context.WithoutCancel(ctx), se); err != nil {
+		s.Log.Warn("can't record an event", "kind", e.Kind, "err", err)
+	}
+}
+
+// Events returns recorded events, newest first.
+func (s *Service) Events(ctx context.Context, f store.EventFilter) ([]store.Event, error) {
+	return s.Store.Events(ctx, f)
+}

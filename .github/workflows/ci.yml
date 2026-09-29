@@ -1,0 +1,182 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  # Not every push: `pull_request` only fires for a branch that has an open PR (when it's
+  # opened, and again on each later push to it), never for a bare branch push on its own.
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Build with the newest supported Go. go.mod's `go` line is only the minimum.
+  GO_VERSION: "1.27.x"
+  NODE_VERSION: "24"
+  # Keep in step with GOLANGCI_LINT_VERSION in the Makefile.
+  GOLANGCI_LINT_VERSION: v2.14.0
+
+jobs:
+  go:
+    name: Go
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - uses: golangci/golangci-lint-action@v9
+        with:
+          version: ${{ env.GOLANGCI_LINT_VERSION }}
+          args: --build-tags integration
+      - name: Test
+        run: make test-go
+
+  web:
+    name: Web app
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+      - name: Audit dependencies
+        run: npm audit --audit-level=moderate
+      - name: Lint and format check
+        run: npm run lint
+      - name: Type check
+        run: npm run check
+      - name: Test
+        run: npm test
+      - name: Build
+        run: npm run build
+      - uses: actions/upload-artifact@v7
+        with:
+          name: web-build
+          path: web/build
+          if-no-files-found: error
+          retention-days: 1
+
+  e2e:
+    name: E2E (browser)
+    needs: [web]
+    # The real web app, embedded in the real binary, driven in Chromium against
+    # `drawbridge serve --backend fake` (docs/PLAN.md §12).
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - uses: actions/download-artifact@v8
+        with:
+          name: web-build
+          path: web/build
+      - name: Build the binary with the web app
+        run: make embed build
+      - name: Install Playwright's Chromium
+        working-directory: web
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+      - name: End-to-end tests
+        working-directory: web
+        run: DRAWBRIDGE_BIN="$GITHUB_WORKSPACE/dist/drawbridge" npx playwright test
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: e2e-results
+          path: web/test-results
+          retention-days: 7
+
+  integration:
+    name: Integration (kernel WireGuard)
+    needs: [go]
+    # A GitHub-hosted VM: root through sudo, and Ubuntu's kernel with WireGuard and nftables
+    # (docs/PLAN.md §12). The tests work only in network namespaces they create. A
+    # self-hosted runner that meets docs/MANUAL_CHECKLIST.md §4 could run this too (the next
+    # step is skipped there), but never one attached to a public repo: it would run code from
+    # forks' pull requests.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - name: Kernel modules and nft
+        if: runner.environment == 'github-hosted'
+        run: |
+          # The ruleset's other expressions (meta, rt, exthdr, sets) are part of nf_tables.
+          modules=(wireguard veth nf_tables nft_chain_nat nft_masq)
+          packages=()
+          sudo sh -c 'command -v nft' >/dev/null || packages+=(nftables)
+          # Azure's Ubuntu kernel may keep some of these in linux-modules-extra.
+          sudo modprobe -a "${modules[@]}" || packages+=("linux-modules-extra-$(uname -r)")
+          if [ ${#packages[@]} -gt 0 ]; then
+            sudo apt-get update -q
+            sudo apt-get install -y -q --no-install-recommends "${packages[@]}"
+          fi
+          sudo modprobe -a "${modules[@]}"
+      - name: Preflight (what the runner has, and what it's missing)
+        run: test/integration/preflight.sh
+      - name: Build
+        run: CGO_ENABLED=0 go build -o dist/drawbridge ./cmd/drawbridge
+      - name: Integration tests
+        run: |
+          # As root directly, or through sudo when the runner isn't root.
+          exec_args=()
+          if [ "$(id -u)" != 0 ]; then exec_args=(-exec "sudo -E"); fi
+          DRAWBRIDGE_INTEGRATION=1 DRAWBRIDGE_BIN="$PWD/dist/drawbridge" \
+            go test -tags integration -count=1 -v "${exec_args[@]}" ./test/integration/
+
+  spelling:
+    name: Spelling (U.S. English)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - run: make spell
+
+  packages:
+    name: Packages
+    needs: [go, web, e2e, spelling, integration]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # Tags, so a release build gets its version from `git describe`.
+          fetch-depth: 0
+      - uses: actions/setup-go@v7
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - uses: actions/download-artifact@v8
+        with:
+          name: web-build
+          path: web/build
+      - name: Build binaries and .deb packages
+        run: make embed package
+      - uses: actions/upload-artifact@v7
+        with:
+          name: drawbridge-deb
+          path: dist/*.deb
+          if-no-files-found: error

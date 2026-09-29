@@ -1,0 +1,9 @@
+#!/bin/sh
+set -e
+
+# On upgrade, postinst restarts the daemon and leaves the tunnel up, so nothing stops
+# here. On removal, stop the daemon, then take the tunnel down.
+if [ "$1" = "remove" ] && [ -d /run/systemd/system ]; then
+	systemctl disable --now drawbridge.service || true
+	systemctl disable --now drawbridge-tunnel.service || true
+fi

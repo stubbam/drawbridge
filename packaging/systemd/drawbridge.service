@@ -1,0 +1,51 @@
+[Unit]
+Description=Drawbridge web manager for WireGuard
+Documentation=https://github.com/stuffam/drawbridge
+Wants=network-online.target drawbridge-tunnel.service
+After=network-online.target drawbridge-tunnel.service
+
+[Service]
+Type=notify
+User=drawbridge
+Group=drawbridge
+ExecStart=/usr/bin/drawbridge serve
+Restart=on-failure
+RestartSec=2s
+
+# CAP_NET_ADMIN, and nothing else, configures WireGuard, addresses, and nftables
+# (ADR 0007). The daemon only changes a tunnel that drawbridge-tunnel.service brought up.
+AmbientCapabilities=CAP_NET_ADMIN
+CapabilityBoundingSet=CAP_NET_ADMIN
+
+# Sandboxing (docs/PLAN.md §4.2).
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+ProtectProc=invisible
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+StateDirectory=drawbridge
+StateDirectoryMode=0700
+# The control socket lives here; members of the drawbridge group may use it.
+RuntimeDirectory=drawbridge
+RuntimeDirectoryMode=0750
+RemoveIPC=yes
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

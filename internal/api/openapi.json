@@ -1,0 +1,1792 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Drawbridge API",
+    "version": "0.0.0",
+    "description": "The API behind Drawbridge's web UI (docs/PLAN.md §8).\n\nIt's served only to the home network and the VPN, over HTTPS on port 51821. Log in with POST /api/auth/login; the session is a cookie, `__Host-drawbridge`. Every request that changes something needs the `X-Drawbridge` header (any value) and, when it has a body, `Content-Type: application/json`."
+  },
+  "tags": [
+    {
+      "name": "auth"
+    },
+    {
+      "name": "server"
+    },
+    {
+      "name": "clients"
+    },
+    {
+      "name": "events"
+    },
+    {
+      "name": "system"
+    }
+  ],
+  "security": [
+    {
+      "session": []
+    }
+  ],
+  "paths": {
+    "/healthz": {
+      "get": {
+        "summary": "Health check",
+        "responses": {
+          "200": {
+            "description": "The daemon is running.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Health"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "system"
+        ],
+        "security": []
+      }
+    },
+    "/api/version": {
+      "get": {
+        "summary": "Version",
+        "responses": {
+          "200": {
+            "description": "The running version.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Version"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "system"
+        ],
+        "security": []
+      }
+    },
+    "/api/openapi.json": {
+      "get": {
+        "summary": "This document",
+        "responses": {
+          "200": {
+            "description": "The OpenAPI document.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "system"
+        ],
+        "security": []
+      }
+    },
+    "/api/setup": {
+      "get": {
+        "summary": "Whether first-run setup is needed",
+        "responses": {
+          "200": {
+            "description": "Setup status.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SetupStatus"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "auth"
+        ],
+        "security": []
+      },
+      "post": {
+        "summary": "Create the admin account",
+        "responses": {
+          "401": {
+            "$ref": "#/components/responses/NotLoggedIn"
+          },
+          "403": {
+            "description": "The setup token is wrong, or the request failed the CSRF checks.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "The account exists, and the response logs it in.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Me"
+                }
+              }
+            },
+            "headers": {
+              "Set-Cookie": {
+                "$ref": "#/components/headers/SessionCookie"
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Invalid"
+          },
+          "409": {
+            "description": "Setup is already complete.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        },
+        "description": "Needs the one-time setup token that the package prints at install, and `drawbridge admin setup-token` shows.",
+        "tags": [
+          "auth"
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CSRF"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetupRequest"
+              }
+            }
+          }
+        },
+        "security": []
+      }
+    },
+    "/api/auth/login": {
+      "post": {
+        "summary": "Log in",
+        "responses": {
+          "200": {
+            "description": "Logged in.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Me"
+                }
+              }
+            },
+            "headers": {
+              "Set-Cookie": {
+                "$ref": "#/components/headers/SessionCookie"
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Invalid"
+          },
+          "401": {
+            "description": "The username or the password is wrong.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        },
+        "description": "After five failed attempts from a source or for the account, each further attempt waits twice as long as the last, up to 15 minutes.",
+        "tags": [
+          "auth"
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CSRF"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginRequest"
+              }
+            }
+          }
+        },
+        "security": []
+      }
+    },
+    "/api/auth/logout": {
+      "post": {
+        "summary": "Log out",
+        "responses": {
+          "401": {
+            "$ref": "#/components/responses/NotLoggedIn"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "204": {
+            "description": "Logged out; the cookie is cleared."
+          }
+        },
+        "tags": [
+          "auth"
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CSRF"
+          }
+        ]
+      }
+    },
+    "/api/auth/me": {
+      "get": {
+        "summary": "The logged-in account",
+        "responses": {
+          "401": {
+            "$ref": "#/components/responses/NotLoggedIn"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "200": {
+            "description": "The account and this session.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Me"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/auth/password": {
+      "post": {
+        "summary": "Change the password",
+        "responses": {
+          "401": {
+            "$ref": "#/components/responses/NotLoggedIn"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "204": {
+            "description": "Changed. Every other session is logged out."
+          },
+          "400": {
+            "description": "The current password is wrong, or the new one is too short.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        },
+        "tags": [
+          "auth"
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CSRF"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasswordChange"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/sessions": {
+      "get": {
+        "summary": "Active sessions",
+        "responses": {
+          "401": {
+            "$ref": "#/components/responses/NotLoggedIn"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "200": {
+            "description": "Newest first.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Session"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/auth/sessions/{id}": {
+      "delete": {
+        "summary": "Revoke a session",
+        "responses": {
+          "401": {
+            "$ref": "#/components/responses/NotLoggedIn"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "204": {
+            "description": "Revoked. Revoking the current session logs out."
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        },
+        "tags": [
+          "auth"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/CSRF"
+          }
+        ]
+      }
+    },
+    "/api/server": {
+      "get": {
+        "summary": "Server settings",
+        "responses": {
+          "401": {
+            "$ref": "#/components/responses/NotLoggedIn"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "200": {
+            "description": "The settings.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Settings"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "server"
+        ]
+      },
+      "patch": {
+        "summary": "Change server settings",
+        "responses": {
+          "401": {
+            "$ref": "#/components/responses/NotLoggedIn"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "200": {
+            "description": "The saved settings, and whether they're in effect.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SettingsResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Invalid"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        },
+        "description": "Changes apply to the tunnel at once. Client configs pick up endpoint, port, MTU, DNS, and keepalive changes when they're downloaded again.",
+        "tags": [
+          "server"
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CSRF"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SettingsPatch"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/server/status": {
+      "get": {
+        "summary": "Tunnel status",
+        "responses": {
+          "401": {
+            "$ref": "#/components/responses/NotLoggedIn"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "200": {
+            "description": "Whether the tunnel is up, and client counts.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServerStatus"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "server"
+        ]
+      }
+    },
+    "/api/clients": {
+      "get": {
+        "summary": "List clients",
+        "responses": {
+          "401": {
+            "$ref": "#/components/responses/NotLoggedIn"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "200": {
+            "description": "Every client with its live state, ordered by IPv4 address.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Client"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "clients"
+        ]
+      },
+      "post": {
+        "summary": "Add a client",
+        "responses": {
+          "401": {
+            "$ref": "#/components/responses/NotLoggedIn"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "201": {
+            "description": "Created, with the next free addresses and new keys.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClientResult"
+                }
+              }
+            },
+            "headers": {
+              "Location": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "The new client's URL."
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Invalid"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        },
+        "tags": [
+          "clients"
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CSRF"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NewClient"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/clients/{id}": {
+      "get": {
+        "summary": "One client",
+        "responses": {
+          "401": {
+            "$ref": "#/components/responses/NotLoggedIn"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "200": {
+            "description": "The client with its live state.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Client"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        },
+        "tags": [
+          "clients"
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ClientID"
+          }
+        ]
+      },
+      "patch": {
+        "summary": "Rename a client",
+        "responses": {
+          "401": {
+            "$ref": "#/components/responses/NotLoggedIn"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "200": {
+            "description": "The client.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClientResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Invalid"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        },
+        "description": "A client's name never appears in its config or in the tunnel, so renaming doesn't change either.",
+        "tags": [
+          "clients"
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ClientID"
+          },
+          {
+            "$ref": "#/components/parameters/CSRF"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClientPatch"
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete a client",
+        "responses": {
+          "401": {
+            "$ref": "#/components/responses/NotLoggedIn"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "200": {
+            "description": "The deleted client. Its config stops working at once.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClientResult"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        },
+        "tags": [
+          "clients"
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ClientID"
+          },
+          {
+            "$ref": "#/components/parameters/CSRF"
+          }
+        ]
+      }
+    },
+    "/api/clients/{id}/pause": {
+      "post": {
+        "summary": "Pause a client",
+        "responses": {
+          "401": {
+            "$ref": "#/components/responses/NotLoggedIn"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "200": {
+            "description": "Paused: the client is out of the tunnel and can't connect.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClientResult"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        },
+        "tags": [
+          "clients"
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ClientID"
+          },
+          {
+            "$ref": "#/components/parameters/CSRF"
+          }
+        ]
+      }
+    },
+    "/api/clients/{id}/resume": {
+      "post": {
+        "summary": "Resume a client",
+        "responses": {
+          "401": {
+            "$ref": "#/components/responses/NotLoggedIn"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "200": {
+            "description": "Resumed. The client reconnects within about 15 seconds.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClientResult"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        },
+        "tags": [
+          "clients"
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ClientID"
+          },
+          {
+            "$ref": "#/components/parameters/CSRF"
+          }
+        ]
+      }
+    },
+    "/api/clients/{id}/config": {
+      "get": {
+        "summary": "Download a client's config",
+        "responses": {
+          "401": {
+            "$ref": "#/components/responses/NotLoggedIn"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "200": {
+            "description": "A wg-quick config, as an attachment named after the client. Each download is recorded in the event log.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "description": "The server's endpoint isn't set yet.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "clients"
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ClientID"
+          }
+        ]
+      }
+    },
+    "/api/clients/{id}/traffic": {
+      "get": {
+        "summary": "One client's traffic history",
+        "responses": {
+          "401": {
+            "$ref": "#/components/responses/NotLoggedIn"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "200": {
+            "description": "Oldest first.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/TrafficSample"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Invalid"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        },
+        "tags": [
+          "clients"
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ClientID"
+          },
+          {
+            "$ref": "#/components/parameters/TrafficRange"
+          }
+        ]
+      }
+    },
+    "/api/clients/{id}/sessions": {
+      "get": {
+        "summary": "One client's connection history",
+        "responses": {
+          "401": {
+            "$ref": "#/components/responses/NotLoggedIn"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "200": {
+            "description": "Newest first; open and closed sessions alike.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ClientSession"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Invalid"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        },
+        "tags": [
+          "clients"
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ClientID"
+          },
+          {
+            "name": "before",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "description": "Only sessions started before this RFC 3339 timestamp, for paging."
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 100
+            }
+          }
+        ]
+      }
+    },
+    "/api/traffic": {
+      "get": {
+        "summary": "Every client's traffic history, summed",
+        "responses": {
+          "401": {
+            "$ref": "#/components/responses/NotLoggedIn"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "200": {
+            "description": "Oldest first, the dashboard's total-throughput aggregate.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/TrafficSample"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Invalid"
+          }
+        },
+        "tags": [
+          "clients"
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/TrafficRange"
+          }
+        ]
+      }
+    },
+    "/api/events": {
+      "get": {
+        "summary": "The event log",
+        "responses": {
+          "401": {
+            "$ref": "#/components/responses/NotLoggedIn"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "200": {
+            "description": "Newest first.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Event"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Invalid"
+          }
+        },
+        "tags": [
+          "events"
+        ],
+        "parameters": [
+          {
+            "name": "client",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Only events about this client ID."
+          },
+          {
+            "name": "category",
+            "in": "query",
+            "schema": {
+              "enum": [
+                "admin",
+                "system",
+                "connection"
+              ]
+            }
+          },
+          {
+            "name": "before",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Only events older than this event ID, for paging."
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 500,
+              "default": 100
+            }
+          }
+        ]
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Error": {
+        "type": "object",
+        "required": [
+          "error"
+        ],
+        "properties": {
+          "error": {
+            "type": "string",
+            "description": "What went wrong, for people."
+          }
+        }
+      },
+      "Version": {
+        "type": "object",
+        "required": [
+          "version",
+          "commit"
+        ],
+        "properties": {
+          "version": {
+            "type": "string",
+            "examples": [
+              "v0.1.0"
+            ]
+          },
+          "commit": {
+            "type": "string"
+          }
+        }
+      },
+      "Health": {
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "properties": {
+          "status": {
+            "const": "ok"
+          }
+        }
+      },
+      "SetupStatus": {
+        "type": "object",
+        "required": [
+          "needed"
+        ],
+        "properties": {
+          "needed": {
+            "type": "boolean",
+            "description": "True until the admin account exists."
+          }
+        }
+      },
+      "SetupRequest": {
+        "type": "object",
+        "required": [
+          "token",
+          "username",
+          "password"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "token": {
+            "type": "string",
+            "description": "The setup token from `drawbridge admin setup-token`. Case, dashes, and spaces don't matter.",
+            "examples": [
+              "ABCDE-FGHJK-LMNPQ-RSTUV"
+            ]
+          },
+          "username": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 32,
+            "description": "Letters, digits, and . _ -, starting with a letter or digit."
+          },
+          "password": {
+            "type": "string",
+            "minLength": 10,
+            "description": "At least 10 characters, at most 1,024 bytes."
+          }
+        }
+      },
+      "LoginRequest": {
+        "type": "object",
+        "required": [
+          "username",
+          "password"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "username": {
+            "type": "string"
+          },
+          "password": {
+            "type": "string"
+          }
+        }
+      },
+      "PasswordChange": {
+        "type": "object",
+        "required": [
+          "current_password",
+          "new_password"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "current_password": {
+            "type": "string"
+          },
+          "new_password": {
+            "type": "string",
+            "minLength": 10
+          }
+        }
+      },
+      "User": {
+        "type": "object",
+        "required": [
+          "username",
+          "created_at"
+        ],
+        "properties": {
+          "username": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "last_login_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the account last logged in. In the response to logging in or setup, the login before this one, so people can spot one they did not make; absent if there was none."
+          }
+        }
+      },
+      "Session": {
+        "type": "object",
+        "required": [
+          "id",
+          "created_at",
+          "last_seen_at",
+          "expires_at",
+          "ip",
+          "user_agent",
+          "current"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Identifies the session for revoking it; it isn't the cookie's token."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "last_seen_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Updated at most every five minutes. A session idle for an hour ends."
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Twelve hours after login, however active the session is."
+          },
+          "ip": {
+            "type": "string"
+          },
+          "user_agent": {
+            "type": "string"
+          },
+          "current": {
+            "type": "boolean",
+            "description": "The session making this request."
+          }
+        }
+      },
+      "Me": {
+        "type": "object",
+        "required": [
+          "user",
+          "session"
+        ],
+        "properties": {
+          "user": {
+            "$ref": "#/components/schemas/User"
+          },
+          "session": {
+            "$ref": "#/components/schemas/Session"
+          }
+        }
+      },
+      "Settings": {
+        "type": "object",
+        "required": [
+          "interface",
+          "listen_port",
+          "endpoint_host",
+          "endpoint_port",
+          "endpoint",
+          "public_key",
+          "mtu",
+          "ipv4_subnet",
+          "ipv4_address",
+          "ipv6_subnet",
+          "ipv6_address",
+          "dns",
+          "keepalive",
+          "client_isolation",
+          "client_allowed_ips",
+          "admin_allowed"
+        ],
+        "properties": {
+          "interface": {
+            "type": "string",
+            "examples": [
+              "wg0"
+            ]
+          },
+          "listen_port": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 65535
+          },
+          "endpoint_host": {
+            "type": "string",
+            "description": "The FQDN or address clients connect to; empty until it's set."
+          },
+          "endpoint_port": {
+            "type": "integer",
+            "description": "The port clients connect to, if it differs from listen_port (a router forwarding another port); 0 means listen_port."
+          },
+          "endpoint": {
+            "type": "string",
+            "description": "host:port as clients see it; empty until endpoint_host is set.",
+            "examples": [
+              "vpn.example.com:51820"
+            ]
+          },
+          "public_key": {
+            "type": "string"
+          },
+          "mtu": {
+            "type": "integer",
+            "minimum": 1280,
+            "maximum": 1500
+          },
+          "ipv4_subnet": {
+            "type": "string",
+            "examples": [
+              "10.8.0.0/24"
+            ]
+          },
+          "ipv4_address": {
+            "type": "string",
+            "examples": [
+              "10.8.0.1"
+            ]
+          },
+          "ipv6_subnet": {
+            "type": "string",
+            "description": "Empty when IPv6 is off.",
+            "examples": [
+              "fd3a:5c1e:92b0:1::/64"
+            ]
+          },
+          "ipv6_address": {
+            "type": "string"
+          },
+          "dns": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "DNS servers in client configs. By default, the server's VPN addresses, which work only if a DNS resolver (such as AdGuard Home) listens on them."
+          },
+          "keepalive": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 3600,
+            "description": "Clients' PersistentKeepalive in seconds; 0 is off."
+          },
+          "client_isolation": {
+            "type": "boolean",
+            "description": "Block traffic between clients."
+          },
+          "client_allowed_ips": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "admin_allowed": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Extra sources, as prefixes, that may reach the admin UI besides the home network, loopback, link-local addresses, and the VPN. Each is inside 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 100.64.0.0/10, or fc00::/7."
+          }
+        }
+      },
+      "SettingsPatch": {
+        "type": "object",
+        "additionalProperties": false,
+        "description": "Omitted fields stay as they are.",
+        "properties": {
+          "endpoint_host": {
+            "type": "string"
+          },
+          "endpoint_port": {
+            "type": "integer"
+          },
+          "listen_port": {
+            "type": "integer"
+          },
+          "mtu": {
+            "type": "integer"
+          },
+          "dns": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "dns_default": {
+            "type": "boolean",
+            "description": "Reset dns to the server's VPN addresses."
+          },
+          "keepalive": {
+            "type": "integer"
+          },
+          "client_isolation": {
+            "type": "boolean"
+          },
+          "admin_allowed": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Replaces the extra admin sources; an empty list removes them all."
+          }
+        }
+      },
+      "SettingsResult": {
+        "type": "object",
+        "required": [
+          "settings"
+        ],
+        "properties": {
+          "settings": {
+            "$ref": "#/components/schemas/Settings"
+          },
+          "warning": {
+            "type": "string",
+            "description": "Set when the change is saved but isn't in effect yet: the tunnel is stopped, or applying it failed."
+          },
+          "apply_failed": {
+            "type": "boolean",
+            "description": "The change is saved, but applying it failed; the daemon retries every 30 seconds."
+          }
+        }
+      },
+      "ServerStatus": {
+        "type": "object",
+        "required": [
+          "tunnel_up",
+          "clients",
+          "paused",
+          "online"
+        ],
+        "properties": {
+          "tunnel_up": {
+            "type": "boolean",
+            "description": "The WireGuard interface exists: drawbridge-tunnel.service is running."
+          },
+          "clients": {
+            "type": "integer"
+          },
+          "paused": {
+            "type": "integer"
+          },
+          "online": {
+            "type": "integer",
+            "description": "Clients with a handshake in the last three minutes."
+          }
+        }
+      },
+      "Peer": {
+        "type": "object",
+        "required": [
+          "receive_bytes",
+          "send_bytes"
+        ],
+        "description": "A client's live state in the tunnel.",
+        "properties": {
+          "endpoint": {
+            "type": "string",
+            "description": "Where the client's packets come from, as address:port."
+          },
+          "last_handshake": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Absent if the client has never completed a handshake."
+          },
+          "receive_bytes": {
+            "type": "integer",
+            "description": "All-time total; resets only when the peer is recreated (a pause and resume, or the tunnel restarting)."
+          },
+          "send_bytes": {
+            "type": "integer",
+            "description": "All-time total; resets only when the peer is recreated (a pause and resume, or the tunnel restarting)."
+          },
+          "session_started_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the client's current connection began. Absent when it has none."
+          },
+          "session_receive_bytes": {
+            "type": "integer",
+            "description": "Bytes received during the client's current connection. Absent when it has none."
+          },
+          "session_send_bytes": {
+            "type": "integer",
+            "description": "Bytes sent during the client's current connection. Absent when it has none."
+          }
+        }
+      },
+      "Client": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "enabled",
+          "ipv4",
+          "ipv6",
+          "public_key",
+          "created_at"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean",
+            "description": "False while the client is paused."
+          },
+          "ipv4": {
+            "type": "string"
+          },
+          "ipv6": {
+            "type": "string",
+            "description": "Empty when IPv6 is off."
+          },
+          "public_key": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "peer": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Peer"
+              }
+            ],
+            "description": "Absent when the client isn't in the tunnel: it's paused, or the tunnel is down."
+          }
+        }
+      },
+      "NewClient": {
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "description": "Letters, digits, spaces, and . _ ' -, starting with a letter or digit."
+          }
+        }
+      },
+      "ClientPatch": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string"
+          }
+        }
+      },
+      "ClientResult": {
+        "type": "object",
+        "required": [
+          "client"
+        ],
+        "properties": {
+          "client": {
+            "$ref": "#/components/schemas/Client"
+          },
+          "warning": {
+            "type": "string"
+          },
+          "apply_failed": {
+            "type": "boolean"
+          }
+        }
+      },
+      "Event": {
+        "type": "object",
+        "required": [
+          "id",
+          "time",
+          "kind",
+          "category",
+          "actor",
+          "via"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "time": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "kind": {
+            "type": "string",
+            "examples": [
+              "client.added",
+              "auth.login_failed",
+              "tunnel.drift_corrected",
+              "client.connected",
+              "client.disconnected",
+              "client.roamed"
+            ]
+          },
+          "category": {
+            "enum": [
+              "admin",
+              "system",
+              "connection"
+            ]
+          },
+          "actor": {
+            "type": "string",
+            "description": "A username, the CLI user's account, or drawbridge for the daemon itself."
+          },
+          "via": {
+            "enum": [
+              "web",
+              "cli",
+              "system"
+            ]
+          },
+          "source_ip": {
+            "type": "string"
+          },
+          "client_id": {
+            "type": "string"
+          },
+          "client_name": {
+            "type": "string",
+            "description": "The client's name when the event happened."
+          },
+          "data": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "TrafficSample": {
+        "type": "object",
+        "required": [
+          "bucket_start",
+          "receive_bytes",
+          "send_bytes"
+        ],
+        "properties": {
+          "bucket_start": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "receive_bytes": {
+            "type": "integer"
+          },
+          "send_bytes": {
+            "type": "integer"
+          }
+        }
+      },
+      "ClientSession": {
+        "type": "object",
+        "required": [
+          "id",
+          "started_at",
+          "endpoint",
+          "receive_bytes",
+          "send_bytes"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "started_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "ended_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Absent while the session is still open."
+          },
+          "endpoint": {
+            "type": "string"
+          },
+          "receive_bytes": {
+            "type": "integer"
+          },
+          "send_bytes": {
+            "type": "integer"
+          }
+        }
+      }
+    },
+    "securitySchemes": {
+      "session": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "__Host-drawbridge"
+      }
+    },
+    "parameters": {
+      "CSRF": {
+        "name": "X-Drawbridge",
+        "in": "header",
+        "required": true,
+        "schema": {
+          "type": "string"
+        },
+        "description": "Any value. Browsers can't send it cross-origin without a CORS preflight, which Drawbridge refuses."
+      },
+      "ClientID": {
+        "name": "id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        },
+        "description": "The client's ID (not its name)."
+      },
+      "TrafficRange": {
+        "name": "range",
+        "in": "query",
+        "schema": {
+          "enum": [
+            "24h",
+            "7d",
+            "90d"
+          ],
+          "default": "24h"
+        },
+        "description": "24h reads raw samples; 7d and 90d read the hourly rollup."
+      }
+    },
+    "headers": {
+      "SessionCookie": {
+        "schema": {
+          "type": "string"
+        },
+        "description": "`__Host-drawbridge=…; Path=/; Secure; HttpOnly; SameSite=Strict`"
+      }
+    },
+    "responses": {
+      "Invalid": {
+        "description": "The request is invalid; the message says why.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "NotLoggedIn": {
+        "description": "Not logged in, or the session ended.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "Forbidden": {
+        "description": "The source isn't on the home network or the VPN, or the request failed the CSRF checks.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "NotFound": {
+        "description": "No such thing.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "Conflict": {
+        "description": "The change conflicts with the current state, such as a name that's taken.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "RateLimited": {
+        "description": "Too many failed attempts.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        },
+        "headers": {
+          "Retry-After": {
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Seconds to wait."
+          }
+        }
+      }
+    }
+  }
+}

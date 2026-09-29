@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta name="text-scale" content="scale" />
+		<meta name="color-scheme" content="light dark" />
+		<script>
+			// Set before first paint, so there's no flash of the wrong theme. Mirrored by
+			// web/src/lib/theme.svelte.ts, which the mode toggle uses from then on.
+			(function () {
+				try {
+					var t = localStorage.getItem('drawbridge-theme');
+					// Auto, or nothing stored yet, follows the browser.
+					if (t !== 'light' && t !== 'dark') {
+						t = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+					}
+					document.documentElement.classList.toggle('dark', t === 'dark');
+				} catch (e) {
+					/* Private browsing or blocked storage: the system's preference still applies. */
+				}
+			})();
+		</script>
+		%sveltekit.head%
+	</head>
+	<body data-sveltekit-preload-data="hover">
+		<div style="display: contents">%sveltekit.body%</div>
+	</body>
+</html>

@@ -58,6 +58,33 @@ func Settings(s model.Settings) SettingsView {
 	return v
 }
 
+// DNSProbeResult is one address's DNS check.
+type DNSProbeResult struct {
+	Address  netip.Addr `json:"address"`
+	Answered bool       `json:"answered"`
+	Detail   string     `json:"detail"`
+}
+
+// DNSCheck is what asking the server's VPN addresses for DNS found. Usable lists the
+// addresses that answered: the client DNS that "this server" means, and empty when no
+// resolver answers on the host.
+type DNSCheck struct {
+	Results []DNSProbeResult `json:"results"`
+	Usable  []netip.Addr     `json:"usable"`
+}
+
+// NewDNSCheck converts the service's probe results.
+func NewDNSCheck(probes []service.DNSProbe) DNSCheck {
+	c := DNSCheck{Results: []DNSProbeResult{}, Usable: []netip.Addr{}}
+	for _, p := range probes {
+		c.Results = append(c.Results, DNSProbeResult{Address: p.Address, Answered: p.Answered, Detail: p.Detail})
+		if p.Answered {
+			c.Usable = append(c.Usable, p.Address)
+		}
+	}
+	return c
+}
+
 // SettingsPatch changes some settings. Omitted fields stay as they are. DNSDefault resets
 // the DNS servers to the server's VPN addresses (D12).
 type SettingsPatch struct {

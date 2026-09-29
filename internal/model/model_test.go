@@ -33,9 +33,17 @@ func TestNewSettingsDefaults(t *testing.T) {
 	if !s.ClientIsolation {
 		t.Error("client isolation should be on by default")
 	}
-	want := []netip.Addr{netip.MustParseAddr("10.8.0.1"), netip.MustParseAddr("fd3a:5c1e:92b0:1::1")}
-	if len(s.DNS) != 2 || s.DNS[0] != want[0] || s.DNS[1] != want[1] {
-		t.Fatalf("DNS = %v, want the server's VPN addresses %v (D12)", s.DNS, want)
+	// A fresh install can't assume a resolver on the host, so clients get a public one
+	// (IPv4 and IPv6) until the setup wizard finds one answering on the VPN addresses (D12).
+	if want := PublicDNS(true); !slices.Equal(s.DNS, want) {
+		t.Fatalf("DNS = %v, want the public resolvers %v", s.DNS, want)
+	}
+	srv, err := s.ServerAddrs()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if slices.Contains(s.DNS, srv.IPv4) || slices.Contains(s.DNS, srv.IPv6) {
+		t.Errorf("DNS = %v includes the server's own address, where nothing may answer", s.DNS)
 	}
 	if len(s.ClientAllowedIPs) != 2 || s.ClientAllowedIPs[1] != netip.MustParsePrefix("::/0") {
 		t.Fatalf("AllowedIPs = %v, want full tunnel for both families", s.ClientAllowedIPs)
@@ -48,8 +56,13 @@ func TestNewSettingsWithoutIPv6(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(s.DNS) != 1 {
-		t.Fatalf("DNS = %v, want only the IPv4 server address", s.DNS)
+	if want := PublicDNS(false); !slices.Equal(s.DNS, want) {
+		t.Fatalf("DNS = %v, want only the IPv4 public resolvers %v", s.DNS, want)
+	}
+	for _, a := range s.DNS {
+		if a.Is6() {
+			t.Errorf("DNS %v is IPv6, but the VPN has no IPv6 subnet", a)
+		}
 	}
 	// ::/0 stays, so IPv6 doesn't leak outside the tunnel.
 	if len(s.ClientAllowedIPs) != 2 {

@@ -470,7 +470,7 @@ func TestServerCommands(t *testing.T) {
 	if d, _ := env.wg.Device("wg0"); d.MTU != 1412 {
 		t.Errorf("the MTU change wasn't applied: %d", d.MTU)
 	}
-	if r := runCLI("", "server", "set", "--dns", "default", sock); !strings.Contains(r.stdout, "10.8.0.1, fd") {
+	if r := runCLI("", "server", "set", "--dns", "server", sock); !strings.Contains(r.stdout, "10.8.0.1, fd") {
 		t.Errorf("default DNS:\n%s", r.stdout)
 	}
 }

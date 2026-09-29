@@ -3,9 +3,9 @@
 	import { api, type Settings, type SettingsPatch } from '$lib/api';
 	import { errorMessage } from '$lib/errors';
 	import CopyButton from '$lib/components/CopyButton.svelte';
+	import DNSFields from '$lib/components/DNSFields.svelte';
 	import Result from '$lib/components/Result.svelte';
-
-	type DNSMode = 'server' | 'custom' | 'none';
+	import { dnsFor, dnsModeOf, type DNSMode } from '$lib/dns';
 
 	let saved = $state<Settings>();
 	let endpointHost = $state('');
@@ -14,23 +14,13 @@
 	let mtu = $state(0);
 	let keepalive = $state(0);
 	let isolation = $state(true);
-	let dnsMode = $state<DNSMode>('server');
+	let dnsMode = $state<DNSMode>('public');
 	let dnsCustom = $state('');
+	let dnsUsable = $state<string[]>([]);
 	let error = $state('');
 	let warning = $state('');
 	let success = $state('');
 	let busy = $state(false);
-
-	/** The DNS servers that point at this server's VPN addresses, for a resolver on the host. */
-	function serverDNS(s: Settings): string[] {
-		return [s.ipv4_address, s.ipv6_address].filter(Boolean);
-	}
-
-	function dnsModeOf(s: Settings): DNSMode {
-		if (s.dns.length === 0) return 'none';
-		const own = serverDNS(s);
-		return s.dns.length === own.length && s.dns.every((a, i) => a === own[i]) ? 'server' : 'custom';
-	}
 
 	function fill(s: Settings) {
 		saved = s;
@@ -42,18 +32,12 @@
 		isolation = s.client_isolation;
 		dnsMode = dnsModeOf(s);
 		dnsCustom = dnsMode === 'custom' ? s.dns.join(', ') : '';
+		dnsUsable = [];
 	}
 
 	onMount(() => {
 		api.server().then(fill, (err) => (error = errorMessage(err)));
 	});
-
-	function customList(): string[] {
-		return dnsCustom
-			.split(/[\s,]+/)
-			.map((a) => a.trim())
-			.filter(Boolean);
-	}
 
 	/** Only the settings that changed, so the server's event log says what happened. */
 	function patch(s: Settings): SettingsPatch {
@@ -64,12 +48,8 @@
 		if (mtu !== s.mtu) p.mtu = mtu;
 		if (keepalive !== s.keepalive) p.keepalive = keepalive;
 		if (isolation !== s.client_isolation) p.client_isolation = isolation;
-		if (dnsMode === 'server' && dnsModeOf(s) !== 'server') p.dns_default = true;
-		if (dnsMode === 'none' && s.dns.length > 0) p.dns = [];
-		if (dnsMode === 'custom') {
-			const list = customList();
-			if (list.join() !== s.dns.join()) p.dns = list;
-		}
+		const dns = dnsFor(s, dnsMode, dnsCustom, dnsUsable);
+		if (dns.join() !== s.dns.join()) p.dns = dns;
 		return p;
 	}
 
@@ -198,45 +178,12 @@
 				<h2 id="dns-heading" class="font-semibold">DNS for clients</h2>
 				<p class="hint">Clients get it in their config, so they need it again after a change.</p>
 			</div>
-			<fieldset class="flex flex-col gap-3 text-sm">
-				<legend class="sr-only">DNS servers</legend>
-				<label class="flex items-start gap-2">
-					<input type="radio" name="dns" value="server" class="mt-0.5" bind:group={dnsMode} />
-					<span>
-						<span class="font-medium">This server</span>
-						<span class="hint block">
-							{serverDNS(saved).join(', ')}. Choose this only if a DNS resolver on this server
-							listens on these addresses, such as AdGuard Home, Pi-hole, Unbound, or dnsmasq;
-							otherwise clients can't look up names.
-						</span>
-					</span>
-				</label>
-				<label class="flex items-start gap-2">
-					<input type="radio" name="dns" value="custom" class="mt-0.5" bind:group={dnsMode} />
-					<span class="font-medium">Other servers</span>
-				</label>
-				{#if dnsMode === 'custom'}
-					<div class="ml-6">
-						<label class="label" for="dns-custom">Addresses</label>
-						<input
-							class="input"
-							id="dns-custom"
-							placeholder="1.1.1.1, 2606:4700:4700::1111"
-							bind:value={dnsCustom}
-						/>
-						<p class="hint">IPv4 or IPv6 addresses, separated by commas or spaces.</p>
-					</div>
-				{/if}
-				<label class="flex items-start gap-2">
-					<input type="radio" name="dns" value="none" class="mt-0.5" bind:group={dnsMode} />
-					<span>
-						<span class="font-medium">None</span>
-						<span class="hint block"
-							>Clients keep using their own DNS, which may leak outside the tunnel.</span
-						>
-					</span>
-				</label>
-			</fieldset>
+			<DNSFields
+				settings={saved}
+				bind:mode={dnsMode}
+				bind:custom={dnsCustom}
+				onchecked={(u) => (dnsUsable = u)}
+			/>
 		</section>
 
 		<div class="flex flex-col gap-3">

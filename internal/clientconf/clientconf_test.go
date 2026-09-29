@@ -29,6 +29,12 @@ func fixture(t *testing.T) (model.Settings, model.Client) {
 		t.Fatal(err)
 	}
 	s.EndpointHost = "vpn.example.com"
+	// A server whose admin chose "this server" as the clients' DNS.
+	srvAddrs, err := s.ServerAddrs()
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.DNS = []netip.Addr{srvAddrs.IPv4, srvAddrs.IPv6}
 	clientKey := mustKey(t, "gIq0lCBAyEeEVJTTaPUBeFgjNYHLnw7ARXdJwqhpzmg=")
 	c := model.Client{
 		Name:         "Alex's phone",

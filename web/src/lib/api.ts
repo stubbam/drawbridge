@@ -44,7 +44,7 @@ export interface SettingsPatch {
 	listen_port?: number;
 	mtu?: number;
 	dns?: string[];
-	/** Reset dns to the server's VPN addresses, for a resolver that listens there. */
+	/** Reset dns to the server's VPN addresses; use dns for anything else. */
 	dns_default?: boolean;
 	keepalive?: number;
 	client_isolation?: boolean;
@@ -62,6 +62,19 @@ export interface ServerStatus {
 	clients: number;
 	paused: number;
 	online: number;
+}
+
+/** What asking one of the server's VPN addresses for DNS found. */
+export interface DNSProbe {
+	address: string;
+	answered: boolean;
+	detail: string;
+}
+
+export interface DNSCheck {
+	results: DNSProbe[];
+	/** The addresses that answered; empty when no resolver runs on the host. */
+	usable: string[];
 }
 
 export interface Peer {
@@ -231,6 +244,7 @@ export const api = {
 	server: () => request<Settings>('GET', '/api/server'),
 	updateServer: (patch: SettingsPatch) => request<SettingsResult>('PATCH', '/api/server', patch),
 	status: () => request<ServerStatus>('GET', '/api/server/status'),
+	dnsCheck: () => request<DNSCheck>('GET', '/api/server/dns-check'),
 
 	clients: () => request<Client[]>('GET', '/api/clients'),
 	client: (id: string) => request<Client>('GET', clientPath(id)),

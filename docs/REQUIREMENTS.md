@@ -41,20 +41,23 @@ aren't tested.
 
 ## Known roadblocks
 
-### DNS for VPN clients needs a resolver on the host
+### DNS for VPN clients: public resolvers unless the host answers
 
-**The default only works if a DNS resolver listens on the host's VPN addresses.** A new server
-points clients' DNS at its own VPN addresses (`10.8.0.1` and its IPv6 counterpart). That suits a
-host running AdGuard Home, Pi-hole, Unbound, or dnsmasq on all addresses. On a host without one,
-clients connect but can't look up any name. systemd-resolved doesn't count: its stub listens on
-`127.0.0.53` only.
+**A new server hands out Cloudflare's public resolvers** (`1.1.1.1`, `1.0.0.1`, and the IPv6 pair
+when the VPN has IPv6), which work on any host. Cloudflare sees the names clients look up, so
+choose other servers if that matters to you.
 
-*Workaround:* before handing out configs, open Settings → DNS for clients → Other servers, and
-enter the resolvers you want (or `drawbridge server set --dns 1.1.1.1,2606:4700:4700::1111`).
-Clients pick up a change when they download their config again.
+**To use the host's own resolver** (AdGuard Home, Pi-hole, Unbound, or dnsmasq), it must answer DNS
+on the server's VPN addresses (`10.8.0.1` and its IPv6 counterpart). First-run setup checks this
+and preselects *This server* when an address answers. Settings → DNS for clients has the same
+choices and a *Check this server* button. systemd-resolved doesn't count: its stub listens on
+`127.0.0.53` only, so the check finds nothing.
 
-*Planned fix:* a DNS step in first-run setup, and a default that points at the host only when
-something answers DNS there.
+*If the check finds nothing on a host that runs a resolver:* it must listen on the VPN addresses
+(for AdGuard Home, `dns.bind_hosts` lists them or `0.0.0.0` and `::`), and start after the tunnel
+exists or bind all addresses. If it says a resolver "refused the query," the resolver's access
+settings don't allow the VPN's subnets. Clients pick up a change when they download their config
+again.
 
 ### IPv6 forwarding can remove the host's own IPv6 address
 

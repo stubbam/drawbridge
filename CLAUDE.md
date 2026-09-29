@@ -37,7 +37,8 @@ roadblocks on other setups.** What exists:
 - The authenticated JSON API over HTTPS on port 51821 (`internal/api/openapi.json`): first-run
   setup, sessions, server settings, clients, and the event log, reachable only from the LAN and
   the VPN.
-- The web UI: setup, login, dashboard, clients (QR codes and downloads), settings (DNS
+- The web UI: setup (account, endpoint, and a DNS step that checks whether the host answers DNS
+  on the VPN addresses), login, dashboard, clients (QR codes and downloads), settings (DNS
   included), logs, and account.
 - Kernel integration tests, and browser end-to-end tests.
 

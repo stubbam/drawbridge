@@ -58,6 +58,7 @@ var routes = []route{
 	{"GET", "/api/server", false, (*handler).getServer},
 	{"PATCH", "/api/server", false, (*handler).patchServer},
 	{"GET", "/api/server/status", false, (*handler).serverStatus},
+	{"GET", "/api/server/dns-check", false, (*handler).dnsCheck},
 	{"GET", "/api/clients", false, (*handler).listClients},
 	{"POST", "/api/clients", false, (*handler).addClient},
 	{"GET", "/api/clients/{id}", false, (*handler).getClient},

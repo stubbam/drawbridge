@@ -501,6 +501,33 @@
         ]
       }
     },
+    "/api/server/dns-check": {
+      "get": {
+        "summary": "Check for a DNS resolver on the server",
+        "description": "Sends one test query to each of the server's VPN addresses, IPv4 and IPv6, on UDP port 53, and reports whether a resolver (AdGuard Home, Pi-hole, Unbound, dnsmasq, and so on) answers. The setup wizard offers \"this server\" as the clients' DNS only when one does. Read-only: it changes nothing.",
+        "responses": {
+          "401": {
+            "$ref": "#/components/responses/NotLoggedIn"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "200": {
+            "description": "What each address answered.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DNSCheck"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "server"
+        ]
+      }
+    },
     "/api/clients": {
       "get": {
         "summary": "List clients",
@@ -1311,7 +1338,7 @@
             "items": {
               "type": "string"
             },
-            "description": "DNS servers in client configs. By default, the server's VPN addresses, which work only if a DNS resolver (such as AdGuard Home) listens on them."
+            "description": "DNS servers in client configs. A new server starts with Cloudflare's public resolvers. The server's own VPN addresses work only if a DNS resolver (such as AdGuard Home) listens on them; GET /api/server/dns-check tests that."
           },
           "keepalive": {
             "type": "integer",
@@ -1421,6 +1448,48 @@
           "online": {
             "type": "integer",
             "description": "Clients with a handshake in the last three minutes."
+          }
+        }
+      },
+      "DNSCheck": {
+        "type": "object",
+        "required": [
+          "results",
+          "usable"
+        ],
+        "properties": {
+          "results": {
+            "type": "array",
+            "description": "One entry per VPN address, IPv4 first.",
+            "items": {
+              "type": "object",
+              "required": [
+                "address",
+                "answered",
+                "detail"
+              ],
+              "properties": {
+                "address": {
+                  "type": "string",
+                  "description": "The server's address on the VPN."
+                },
+                "answered": {
+                  "type": "boolean",
+                  "description": "A resolver replied with a usable answer (a name, or a clean \"no such name\")."
+                },
+                "detail": {
+                  "type": "string",
+                  "description": "What happened, in words for the admin."
+                }
+              }
+            }
+          },
+          "usable": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "The addresses that answered: what \"this server\" means as the clients' DNS. Empty when no resolver answers on the host."
           }
         }
       },

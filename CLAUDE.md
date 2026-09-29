@@ -280,9 +280,11 @@ All of these were established on 2026-09-26 unless noted.
 
 **The reference platform's network stack.** NetworkManager manages the network there, and
 systemd-networkd and ifupdown's `networking` are inactive. That's why its IPv6 kept working
-without the `accept_ra=2` fix the installer doesn't implement yet (docs/PLAN.md §5.5), and why
-`wg0` must still be marked unmanaged in NetworkManager. Don't generalize from it: on an ifupdown
-host, turning on IPv6 forwarding removes the host's own SLAAC address (docs/REQUIREMENTS.md).
+without the `accept_ra=2` fix (NetworkManager sets `accept_ra` to 0 on its uplink, so the installer
+leaves it alone; docs/PLAN.md §5.5), and why `wg0` must still be marked unmanaged in
+NetworkManager. Don't generalize from it: on an ifupdown host, turning on IPv6 forwarding removes
+the host's own SLAAC address unless `accept_ra` is 2 (docs/REQUIREMENTS.md). The integration tests
+prove that in namespaces; a real ifupdown host hasn't run it.
 
 **AdGuard Home's API.** This was checked against `openapi/openapi.yaml` on its `master` branch,
 not yet against a running install:
@@ -433,6 +435,7 @@ the router allows inbound UDP 51820 to the host's stable address (with a real cl
 - `packaging/` holds:
   - Both systemd units.
   - The sysusers.d, sysctl.d, modules-load.d, and NetworkManager drop-ins.
+  - `libexec/accept-ra`, which `postinst` runs (installed at `/usr/lib/drawbridge/accept-ra`).
   - The maintainer scripts and `nfpm.yaml`.
 - `.github/workflows/ci.yml` is CI. Its golangci-lint version must match the Makefile's.
 - `README.md` is the short project description.

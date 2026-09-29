@@ -25,6 +25,12 @@ if [ "$1" = "configure" ]; then
 		mv /etc/drawbridge/secret.key.new /etc/drawbridge/secret.key
 	fi
 
+	# Before forwarding goes on: keep a kernel-SLAAC uplink's own IPv6 working
+	# (accept_ra=2, docs/PLAN.md §5.5). It needs the default route, which forwarding can
+	# remove.
+	/usr/lib/drawbridge/accept-ra ||
+		echo "drawbridge: couldn't check accept_ra; see docs/REQUIREMENTS.md if the host loses its IPv6" >&2
+
 	# IP forwarding, now and at every boot (/usr/lib/sysctl.d/90-drawbridge.conf).
 	sysctl -q -p /usr/lib/sysctl.d/90-drawbridge.conf ||
 		echo "drawbridge: couldn't enable IP forwarding now; it's enabled at the next boot" >&2

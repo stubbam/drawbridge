@@ -59,7 +59,7 @@ setups that need them.
 | Kernel | The WireGuard module (`CONFIG_WIREGUARD`, mainline since 5.6) and nftables. Both ship with the Debian, Ubuntu, and Raspberry Pi kernels. |
 | Userland packages | `nftables` (a dependency) and `wireguard-tools` (recommended, for debugging with `wg show`). |
 | Network | A public IPv4 address with UDP 51820 forwarded to the host, or an IPv6 endpoint the router lets through; a DNS name that stays current (a dynamic DNS client if the public IPv4 address changes, since Drawbridge doesn't update DNS); for IPv6, a **stable** host address (not a temporary/privacy one). |
-| Network stack | NetworkManager, systemd-networkd, or ifupdown. Hosts on ifupdown need `accept_ra=2` on the uplink before install, which the installer doesn't set yet (§5.5). |
+| Network stack | NetworkManager, systemd-networkd, or ifupdown. On ifupdown hosts the installer sets `accept_ra=2` on the uplink (§5.5). |
 | Other services | Drawbridge uses only UDP 51820 and TCP 51821, so it coexists with a DNS resolver (port 53), web servers and reverse proxies (80, 443), and admin UIs like AdGuard Home's (3000). The default client DNS needs a resolver listening on the host's VPN addresses (§6.3). |
 | Uplink name | Not hard-coded (`eth0`, `end0`, `wlan0`, …). It's detected from the default routes. |
 | Storage | microSD or SSD. Write volume is kept low by default to limit SD card wear, and configurable for SSDs (§6.4). |
@@ -155,7 +155,7 @@ passes ambient capabilities to exec'd binaries such as `nft`, so no process need
 Settings that need root are set once by the package's `postinst`:
 
 - `/etc/sysctl.d/90-drawbridge.conf`: `net.ipv4.ip_forward=1` and `net.ipv6.conf.all.forwarding=1`
-  (plus the `accept_ra` fix in §5.5).
+  (plus the `accept_ra` drop-in in §5.5, `/etc/sysctl.d/91-drawbridge-accept-ra.conf`).
 - `/etc/modules-load.d/drawbridge.conf`: `wireguard`, so the module is loaded at boot.
 - The `drawbridge` system user, the directories, the TLS certificate, and the at-rest
   encryption key.
@@ -373,12 +373,17 @@ changes.
 
 - **Forwarding sysctls** for IPv4 and IPv6.
 - **Router Advertisements.** Enabling IPv6 forwarding makes the kernel **ignore RAs** on
-  interfaces where `accept_ra=1`. A host that relies on kernel SLAAC (ifupdown) loses its own
-  IPv6 address and default route.
-  - NetworkManager and systemd-networkd handle RAs in userspace and aren't affected.
-  - **Not yet implemented:** the installer should detect the kernel-SLAAC case and set
-    `net.ipv6.conf.<uplink>.accept_ra=2`. Until it does, `docs/REQUIREMENTS.md` tells admins on
-    ifupdown to set it themselves before installing.
+  interfaces where `accept_ra=1`. A host that relies on kernel SLAAC (ifupdown) would lose its
+  own IPv6 address and default route.
+  - NetworkManager and systemd-networkd handle RAs in userspace and set `accept_ra=0`, so
+    they aren't affected.
+  - The installer runs `/usr/lib/drawbridge/accept-ra` before it enables forwarding. For each
+    uplink (the default route's interface, IPv6 first, then IPv4 for an upgrade where the IPv6
+    route is already gone) whose `accept_ra` is `1`, it sets `accept_ra=2` now and writes
+    `/etc/sysctl.d/91-drawbridge-accept-ra.conf` for boot. An upgrade keeps an interface
+    already in that file while it still reads `2`. `postrm` removes the file. The kernel
+    integration tests send a Router Advertisement to a namespace with forwarding on: the host
+    ignores it before the step and configures its address and default route after.
 - **NetworkManager and `wg0`:** when NetworkManager is active, the installer adds
   `/etc/NetworkManager/conf.d/drawbridge.conf` with `[keyfile]`
   `unmanaged-devices=interface-name:wg0`, so NetworkManager never tries to configure the VPN
@@ -817,8 +822,8 @@ home LAN. The UI is therefore treated as a high-value target:
      (`systemd-sysusers`, falling back to `adduser`), and the directories.
   2. Generate `secret.key`. (The daemon creates its self-signed TLS certificate on first
      start, in its state directory.)
-  3. Install the sysctl and modules-load drop-ins, then apply them. Set `accept_ra=2` if it's
-     needed. If NetworkManager is active, install the drop-in that leaves `wg0` unmanaged
+  3. Install the sysctl and modules-load drop-ins, then apply them. Set `accept_ra=2` where
+     it's needed, before forwarding goes on. If NetworkManager is active, install the drop-in that leaves `wg0` unmanaged
      (§5.5).
   4. Initialize the DB (random ULA prefix, server keypair).
   5. Enable and start both units, then print the URL, the setup token, and the certificate's
@@ -1029,7 +1034,7 @@ Each milestone ends in a usable, tested state.
 | Risk | Mitigation |
 |---|---|
 | An admin locks themselves out by changing settings over the VPN | Safe apply with a 60 s automatic rollback, plus local CLI recovery (`drawbridge admin`, `drawbridge apply`) |
-| Enabling IPv6 forwarding breaks the host's own SLAAC (ifupdown hosts) | Planned: the installer sets `accept_ra=2` where needed, and `doctor` checks it. Not built yet; `docs/REQUIREMENTS.md` has the manual workaround (§5.5) |
+| Enabling IPv6 forwarding breaks the host's own SLAAC (ifupdown hosts) | The installer sets `accept_ra=2` on a kernel-SLAAC uplink (§5.5); `doctor` will check it (M5). `docs/REQUIREMENTS.md` has a manual workaround for setups it doesn't detect |
 | The host firewall or Docker drops forwarded traffic | Drawbridge uses its own table and adds only restrictive rules. Diagnostics detect `policy drop` and a rootful Docker's `FORWARD DROP`, with fix hints. Rootless Docker doesn't touch the host firewall |
 | NetworkManager tries to manage `wg0` | The installer marks `wg0` as unmanaged in NetworkManager |
 | The admin UI is put behind a reverse proxy on the same host | Documented as unsupported. Drawbridge serves the UI only on its own port and ignores forwarded-for headers |
@@ -1059,7 +1064,7 @@ Each milestone ends in a usable, tested state.
 | Dynamic DNS | Not built in | Existing clients (ddclient, or a router's built-in one) cover it. Diagnostics check the A and AAAA records (§5.6) |
 | Admin UI exposure | Home network and VPN only, never the internet; plus extra private-range sources the admin adds, such as a Tailscale tailnet | D11: enforced in the app and in nftables (§5.3, §6.5) |
 | DNS | A resolver on the host (such as AdGuard Home) by default, at the server's VPN addresses | D12: default client DNS, and optional AdGuard Home name sync and per-client DNS logs (§6.3). Known limitation on hosts without a resolver, with a planned fix (§6.3) |
-| Network stack | NetworkManager, systemd-networkd, or ifupdown | The installer marks `wg0` unmanaged for NetworkManager. ifupdown hosts need `accept_ra=2`, which the installer doesn't set yet (§5.5) |
+| Network stack | NetworkManager, systemd-networkd, or ifupdown | The installer marks `wg0` unmanaged for NetworkManager. On ifupdown hosts the installer sets `accept_ra=2` on the uplink (§5.5) |
 | Admins | One admin account (default) | Multiple admins stay optional (M6) |
 | Client private keys | Stored on the server (default) | Configs can be downloaded again at any time |
 | Flow logging | Off (default) | A DNS resolver's query log, such as AdGuard Home's, covers what each client looked up |

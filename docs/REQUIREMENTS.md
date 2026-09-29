@@ -58,14 +58,21 @@ something answers DNS there.
 
 ### IPv6 forwarding can remove the host's own IPv6 address
 
-**Hosts whose kernel configures IPv6 from router advertisements lose their IPv6 address and
-default route after install.** The package turns on IPv6 forwarding for every interface, and
-with forwarding on, the kernel ignores router advertisements wherever `accept_ra` is `1` (the
-usual default). NetworkManager and systemd-networkd handle router advertisements themselves, so
-they aren't affected. Hosts that use ifupdown, as a minimal Debian server install does, are.
+**Hosts whose kernel configures IPv6 from router advertisements would lose their IPv6 address
+and default route.** The package turns on IPv6 forwarding for every interface, and with
+forwarding on, the kernel ignores router advertisements wherever `accept_ra` is `1` (the usual
+default). NetworkManager and systemd-networkd handle router advertisements themselves and set
+`accept_ra` to `0`, so they aren't affected. Hosts that use ifupdown, as a minimal Debian server
+install does, are.
 
-*Workaround:* before installing, find your uplink interface (`ip -6 route show default`) and set
-`accept_ra` to `2` for it, now and at boot:
+*What the installer does:* before it turns on forwarding, it finds the uplink (the default
+route's interface, IPv6 first and then IPv4) and, if that interface's `accept_ra` is `1`, sets it
+to `2` now and at every boot, through `/etc/sysctl.d/91-drawbridge-accept-ra.conf`. It prints a
+line naming the interface. It leaves an interface alone when `accept_ra` is anything else.
+Removing the package removes the file.
+
+*If your setup differs* (say, the uplink isn't the default route's interface, or something
+resets `accept_ra` after boot), set it yourself for the interface that carries your IPv6:
 
 ```bash
 echo 'net.ipv6.conf.eth0.accept_ra = 2' | sudo tee /etc/sysctl.d/80-accept-ra.conf
@@ -73,8 +80,6 @@ sudo sysctl -p /etc/sysctl.d/80-accept-ra.conf
 ```
 
 (Use your interface's name in place of `eth0`.)
-
-*Planned fix:* the installer detects this case and sets `accept_ra` itself.
 
 ### Host firewalls and Docker can block VPN traffic
 

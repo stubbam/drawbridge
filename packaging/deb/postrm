@@ -5,6 +5,12 @@ if [ -d /run/systemd/system ]; then
 	systemctl daemon-reload || true
 fi
 
+# The accept_ra drop-in that /usr/lib/drawbridge/accept-ra wrote goes with the package. The
+# live setting stays until the next boot, which is harmless.
+if [ "$1" = "remove" ] || [ "$1" = "purge" ]; then
+	rm -f /etc/sysctl.d/91-drawbridge-accept-ra.conf
+fi
+
 # Purge deletes Drawbridge's data and configuration. The system user stays, as Debian
 # policy asks, so file ownership stays consistent if it's installed again.
 if [ "$1" = "purge" ]; then

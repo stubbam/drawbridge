@@ -38,4 +38,5 @@ configurable) that syncs each client as a named persistent client and shows per-
   Each address is checked on its own, and only the ones that answer are saved. The decision above
   still holds for hosts that run a resolver; it is no longer the default for those that don't.
   The CLI's `server set --dns` keyword for the server's addresses is now `server` (it was
-  `default`).
+  `default`), and it runs the same check: it saves only the addresses that answer, and refuses
+  when none does unless `--force` is given.

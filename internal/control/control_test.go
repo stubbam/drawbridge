@@ -62,7 +62,11 @@ func newTestEnv(t *testing.T, tunnelUp bool) *testEnv {
 		}
 	}
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
-	svc := &service.Service{Store: st, Rec: rec, WG: backend, Log: log}
+	svc := &service.Service{Store: st, Rec: rec, WG: backend, Log: log,
+		// A resolver answers on IPv4 only, so no test sends a real query.
+		DNSProbe: func(_ context.Context, a netip.Addr) service.DNSProbe {
+			return service.DNSProbe{Answered: a.Is4(), Detail: "probed " + a.String()}
+		}}
 
 	sock := filepath.Join(dir, "control.sock")
 	ln, err := Listen(sock)
@@ -132,6 +136,18 @@ func TestSettingsRoundTrip(t *testing.T) {
 	res, err = env.client.UpdateSettings(ctx, views.SettingsPatch{DNSDefault: true})
 	if err != nil || len(res.Settings.DNS) != 2 || res.Settings.DNS[0] != netip.MustParseAddr("10.8.0.1") {
 		t.Fatalf("default DNS: %+v, %v", res.Settings.DNS, err)
+	}
+}
+
+func TestDNSCheck(t *testing.T) {
+	env := newTestEnv(t, true)
+	check, err := env.client.DNSCheck(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(check.Results) != 2 || check.Results[1].Answered || len(check.Usable) != 1 ||
+		check.Usable[0] != netip.MustParseAddr("10.8.0.1") {
+		t.Fatalf("%+v", check)
 	}
 }
 

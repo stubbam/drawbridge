@@ -262,6 +262,9 @@ M3's exit criteria: everything can be done from a phone or a desktop browser, in
   With no resolver on the host, it reports nothing listening and preselects the public resolvers.
   The unit and browser tests cover both outcomes with a stand-in resolver and the fake backend;
   a real resolver on the host hasn't been asked.
+- `[UNVERIFIED]` `sudo drawbridge server set --dns server` on a host with AdGuard Home listening on
+  all addresses saves both VPN addresses; with the resolver stopped it refuses and says nothing
+  answers, and `--force` saves them anyway. The tests cover both with a stand-in resolver.
 - `[VERIFIED 2026-09-27]` The same pages work on the phone itself, through the VPN at
   `https://10.8.0.1:51821`, and are usable at phone width.
 - `[VERIFIED 2026-09-27]` Account → the laptop's and the phone's sessions are listed; logging the

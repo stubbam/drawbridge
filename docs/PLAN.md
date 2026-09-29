@@ -490,6 +490,9 @@ AdGuard Home in particular gets an optional integration (below).
     ones that answered, so a resolver bound to IPv4 alone doesn't leave clients waiting on an IPv6
     address that never replies. systemd-resolved's stub listens on `127.0.0.53` only, so the
     check finds nothing there.
+  - **The CLI** (`drawbridge server set --dns server`) runs the same check through the control
+    socket (`GET /v1/dns-check`) and saves only the addresses that answer. When none does, it
+    refuses and says why; `--force` saves both VPN addresses anyway.
   - **The setup wizard** (§9) runs the check on its DNS step and preselects *This server* when it
     finds an address that answers; otherwise it preselects the public resolvers. Settings has the
     same choices and a check button.

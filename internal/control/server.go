@@ -65,6 +65,7 @@ func NewHandler(svc *service.Service, log *slog.Logger, fingerprint string) http
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /v1/settings", h.getSettings)
 	mux.HandleFunc("PATCH /v1/settings", h.patchSettings)
+	mux.HandleFunc("GET /v1/dns-check", h.dnsCheck)
 	mux.HandleFunc("GET /v1/clients", h.listClients)
 	mux.HandleFunc("POST /v1/clients", h.addClient)
 	mux.HandleFunc("GET /v1/clients/{name}", h.getClient)
@@ -119,6 +120,15 @@ func (h *handler) getSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, views.Settings(s))
+}
+
+func (h *handler) dnsCheck(w http.ResponseWriter, r *http.Request) {
+	probes, err := h.svc.ProbeDNS(r.Context())
+	if err != nil {
+		h.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, views.NewDNSCheck(probes))
 }
 
 func (h *handler) patchSettings(w http.ResponseWriter, r *http.Request) {

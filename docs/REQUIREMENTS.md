@@ -50,7 +50,8 @@ choose other servers if that matters to you.
 **To use the host's own resolver** (AdGuard Home, Pi-hole, Unbound, or dnsmasq), it must answer DNS
 on the server's VPN addresses (`10.8.0.1` and its IPv6 counterpart). First-run setup checks this
 and preselects *This server* when an address answers. Settings → DNS for clients has the same
-choices and a *Check this server* button. systemd-resolved doesn't count: its stub listens on
+choices and a *Check this server* button, and `drawbridge server set --dns server` runs the same
+check, saving only the addresses that answer (`--force` skips it). systemd-resolved doesn't count: its stub listens on
 `127.0.0.53` only, so the check finds nothing.
 
 *If the check finds nothing on a host that runs a resolver:* it must listen on the VPN addresses

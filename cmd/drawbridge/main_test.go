@@ -15,8 +15,10 @@ import (
 	"net/netip"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -435,6 +437,12 @@ func TestAdminCommands(t *testing.T) {
 
 func TestServerCommands(t *testing.T) {
 	env := newFakeEnv(t)
+	// Which VPN addresses a resolver answers on: 0 none, 1 IPv4 only, 2 both.
+	var answering atomic.Int32
+	env.svc.DNSProbe = func(_ context.Context, a netip.Addr) service.DNSProbe {
+		n := answering.Load()
+		return service.DNSProbe{Answered: n == 2 || (n == 1 && a.Is4()), Detail: "probed " + a.String()}
+	}
 	startDaemon(t, env)
 	sock := "--control=" + env.socket
 
@@ -470,8 +478,42 @@ func TestServerCommands(t *testing.T) {
 	if d, _ := env.wg.Device("wg0"); d.MTU != 1412 {
 		t.Errorf("the MTU change wasn't applied: %d", d.MTU)
 	}
-	if r := runCLI("", "server", "set", "--dns", "server", sock); !strings.Contains(r.stdout, "10.8.0.1, fd") {
-		t.Errorf("default DNS:\n%s", r.stdout)
+
+	// "--dns server" saves only the addresses that answer a test query.
+	dnsLine := regexp.MustCompile(`(?m)^DNS:\s+(.*)$`)
+	dnsOf := func(out string) string {
+		if m := dnsLine.FindStringSubmatch(out); m != nil {
+			return m[1]
+		}
+		return "no DNS line:\n" + out
+	}
+	r = runCLI("", "server", "set", "--dns", "server", sock)
+	if r.code != 1 || !strings.Contains(r.stderr, "no DNS resolver answers") || !strings.Contains(r.stderr, "--force") {
+		t.Errorf("no resolver answers: %+v", r)
+	}
+	if got := dnsOf(runCLI("", "server", "show", sock).stdout); got != "9.9.9.9, 2620:fe::fe" {
+		t.Errorf("a refused --dns server changed the DNS to %q", got)
+	}
+	if r := runCLI("", "server", "set", "--force", sock); r.code != 2 || !strings.Contains(r.stderr, "nothing to change") {
+		t.Errorf("--force alone: %+v", r)
+	}
+	r = runCLI("", "server", "set", "--dns", "server", "--force", sock)
+	if got := dnsOf(r.stdout); r.code != 0 || !strings.HasPrefix(got, "10.8.0.1, fd") {
+		t.Errorf("--force with nothing answering: %q, %+v", got, r)
+	}
+	answering.Store(1)
+	r = runCLI("", "server", "set", "--dns", "9.9.9.9", sock)
+	r = runCLI("", "server", "set", "--dns", "server", sock)
+	if got := dnsOf(r.stdout); r.code != 0 || got != "10.8.0.1" {
+		t.Errorf("IPv4 answers only: %q, %+v", got, r)
+	}
+	if !strings.Contains(r.stderr, "DNS check: fd") {
+		t.Errorf("the skipped IPv6 address isn't reported:\n%s", r.stderr)
+	}
+	answering.Store(2)
+	r = runCLI("", "server", "set", "--dns", "server", sock)
+	if got := dnsOf(r.stdout); r.code != 0 || !strings.HasPrefix(got, "10.8.0.1, fd") {
+		t.Errorf("both answer: %q, %+v", got, r)
 	}
 }
 

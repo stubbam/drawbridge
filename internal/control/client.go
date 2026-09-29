@@ -110,6 +110,12 @@ func (c *Client) Settings(ctx context.Context) (views.SettingsView, error) {
 	return v, c.do(ctx, http.MethodGet, "/v1/settings", nil, &v)
 }
 
+// DNSCheck asks the server's VPN addresses whether a DNS resolver answers on them.
+func (c *Client) DNSCheck(ctx context.Context) (views.DNSCheck, error) {
+	var v views.DNSCheck
+	return v, c.do(ctx, http.MethodGet, "/v1/dns-check", nil, &v)
+}
+
 // UpdateSettings applies a patch.
 func (c *Client) UpdateSettings(ctx context.Context, p views.SettingsPatch) (views.SettingsResult, error) {
 	var v views.SettingsResult

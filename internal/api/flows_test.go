@@ -557,7 +557,8 @@ func TestTrafficAndSessionHistoryEndpoints(t *testing.T) {
 	// sampler: this test is about the API surface, which conntrack_test.go and
 	// traffic_test.go already cover.
 	ctx := context.Background()
-	t0 := time.Date(2026, 9, 28, 10, 0, 0, 0, time.UTC)
+	// The API answers with a window ending now, so seed inside it.
+	t0 := time.Now().UTC().Add(-2 * time.Hour).Truncate(time.Minute)
 	if err := svc.Store.InsertTraffic(ctx, []store.TrafficSample{
 		{ClientID: id, Resolution: store.ResolutionRaw, BucketStart: t0, RxBytes: 100, TxBytes: 50},
 		{ClientID: id, Resolution: store.ResolutionRaw, BucketStart: t0.Add(time.Minute), RxBytes: 200, TxBytes: 75},

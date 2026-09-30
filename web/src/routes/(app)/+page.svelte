@@ -148,7 +148,7 @@
 		<h2 id="throughput-heading" class="font-semibold">Total Throughput</h2>
 		<RangeSelect id="dashboard-range" bind:value={trafficRange} />
 	</div>
-	<TrafficChart data={traffic} range={trafficShown} title="Total, all clients" />
+	<TrafficChart data={traffic} range={trafficShown} title="All Clients" />
 </section>
 
 <div class="grid gap-6 lg:grid-cols-2">

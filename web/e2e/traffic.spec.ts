@@ -25,6 +25,9 @@ test('the dashboard shows a total-throughput chart with a working range control'
 
 	await login(page);
 	await expect(page.getByRole('img', { name: 'Total Throughput chart' })).toBeVisible();
+	// The heading above the chart is the only label: the chart doesn't draw its own title.
+	await expect(page.getByText('Total Throughput', { exact: true })).toHaveCount(1);
+	await expect(page.locator('.u-title')).toHaveCount(0);
 	expect(requestedRanges).toContain('24h');
 
 	await page.getByLabel('Range').selectOption('7d');
@@ -56,7 +59,9 @@ test('a client detail page shows its own traffic chart and session history', asy
 	await page.getByRole('button', { name: 'Add', exact: true }).click();
 	await expect(page.getByRole('heading', { name: 'Traffic Test Client' })).toBeVisible();
 
-	await expect(page.getByRole('img', { name: 'Traffic Test Client chart' })).toBeVisible();
+	await expect(page.getByRole('img', { name: 'Total Throughput chart' })).toBeVisible();
+	await expect(page.getByRole('heading', { name: 'Total Throughput' })).toBeVisible();
+	await expect(page.locator('.u-title')).toHaveCount(0);
 	await expect(page.getByText('203.0.113.5:51820')).toBeVisible();
 	await expect(page.getByText('ongoing')).toBeVisible();
 

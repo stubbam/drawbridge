@@ -8,11 +8,12 @@
 	let {
 		data,
 		range,
-		title
+		label
 	}: {
 		data: TrafficSample[];
 		/** The range `data` was loaded for. */ range: TrafficRange;
-		title: string;
+		/** The chart's accessible name. The page's heading is what's drawn above it. */
+		label: string;
 	} = $props();
 
 	let container: HTMLDivElement | undefined;
@@ -58,7 +59,6 @@
 			{
 				width: container.clientWidth || 300,
 				height: 220,
-				title,
 				scales: { x: { time: true, range: () => xRange(range, Date.now()) } },
 				axes: [
 					{ stroke: c.text, grid: { stroke: c.grid } },
@@ -86,7 +86,7 @@
 	}
 
 	$effect(() => {
-		// Re-reads `data`, `range`, and `title`, so this reruns whenever any changes.
+		// Re-reads `data` and `range`, so this reruns whenever either changes.
 		build();
 		return () => chart?.destroy();
 	});
@@ -107,4 +107,4 @@
 	});
 </script>
 
-<div bind:this={container} role="img" aria-label="{title} chart"></div>
+<div bind:this={container} role="img" aria-label="{label} chart"></div>

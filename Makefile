@@ -28,6 +28,10 @@ MISSPELL_VERSION      := v0.8.0
 
 ARCHES := arm64 amd64
 
+# npm writes this file when an install finishes, so it, unlike the node_modules directory,
+# is missing after an interrupted or emptied install and `make` runs `npm ci` again.
+WEB_DEPS := web/node_modules/.package-lock.json
+
 .PHONY: help
 help: ## Show this help.
 	@grep -E '^[a-z0-9-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-12s %s\n", $$1, $$2}'
@@ -47,7 +51,7 @@ $(BIN)/misspell:
 clean-tools: ## Delete ./bin, so the next build installs the pinned tool versions again.
 	rm -rf $(BIN)
 
-web/node_modules: web/package.json web/package-lock.json
+$(WEB_DEPS): web/package.json web/package-lock.json
 	cd web && $(NPM) ci
 	@touch $@
 
@@ -55,7 +59,7 @@ web/node_modules: web/package.json web/package-lock.json
 web: web-build embed ## Build the web app and embed it (web-build, then embed).
 
 .PHONY: web-build
-web-build: web/node_modules ## Build the web app into web/build/.
+web-build: $(WEB_DEPS) ## Build the web app into web/build/.
 	cd web && $(NPM) run build
 
 .PHONY: embed
@@ -105,7 +109,7 @@ test-integration: build ## Run the kernel WireGuard tests in network namespaces 
 		$(GO) test -tags integration -count=1 -v $(SUDO_EXEC) ./test/integration/
 
 .PHONY: test-web
-test-web: web/node_modules ## Run the web app's unit tests.
+test-web: $(WEB_DEPS) ## Run the web app's unit tests.
 	cd web && $(NPM) test
 
 .PHONY: test-e2e
@@ -121,7 +125,7 @@ lint-go: $(BIN)/golangci-lint ## Lint and format-check the Go code.
 	$(BIN)/golangci-lint fmt --diff $(GO_PKGS) ./test/...
 
 .PHONY: lint-web
-lint-web: web/node_modules ## Lint, format-check, and type-check the web app.
+lint-web: $(WEB_DEPS) ## Lint, format-check, and type-check the web app.
 	cd web && $(NPM) run lint && $(NPM) run check
 
 # Lockfiles and SVGs hold package names and path data, not prose.
@@ -133,7 +137,7 @@ spell: $(BIN)/misspell ## Check every tracked text file for British spellings (U
 	$(SPELL_FILES) | xargs -0 $(BIN)/misspell -locale US -error
 
 .PHONY: fmt
-fmt: $(BIN)/golangci-lint web/node_modules ## Format the Go code and the web app.
+fmt: $(BIN)/golangci-lint $(WEB_DEPS) ## Format the Go code and the web app.
 	$(BIN)/golangci-lint fmt $(GO_PKGS) ./test/...
 	cd web && $(NPM) run format
 

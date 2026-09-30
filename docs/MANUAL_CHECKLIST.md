@@ -308,3 +308,32 @@ only sign a session actually ended.
   `↓ 172 KB · ↑ 138 KB`. The host had no browser libraries installed, and a container can't
   reach the host's admin UI (the same isolation §5 checks), so the number was read from a
   browser on another machine on the LAN.
+
+## 8. Diagnostics: `drawbridge doctor` (the first M5 slice)
+
+`drawbridge doctor` asks the daemon (`GET /v1/diagnostics` on the control socket) to run the 13
+checks of docs/PLAN.md §6.6. The daemon reads the host: the kernel's sysctls, its routing table,
+`nft -j list ruleset`, the resolver, and the disk.
+
+- `[VERIFIED 2026-09-29]` The checks work inside the daemon's sandbox. A transient `systemd-run`
+  unit with `drawbridge.service`'s hardening properties (`User=drawbridge`, only
+  `CAP_NET_ADMIN`, `ProtectSystem=strict`, `ProtectKernelTunables`, `ProtectProc=invisible`, the
+  address-family and system-call filters) ran `serve --backend fake` with a scratch state
+  directory. Every check read what it needed: on the reference platform it printed 12 passes and
+  one failure, the endpoint, which a fresh database hasn't set.
+- `[VERIFIED 2026-09-29]` Against the real kernel in network namespaces
+  (`test/integration/doctor_test.go`): `accept_ra` 1 on the uplink fails and 2 passes, forwarding
+  off fails for IPv4 and for IPv6, another table's forward chain with `policy drop` warns until a
+  rule accepts `wg0` (and stays warning for a rule that accepts only one destination port), and
+  `tunnel down` fails the tunnel check.
+- `[UNVERIFIED]` `sudo drawbridge doctor` against the installed daemon on the reference platform
+  (the sandboxed run above used the fake backend, so it didn't see the real `wg0`).
+- `[UNVERIFIED]` On a host with ufw (default forward policy `DROP`), firewalld, or rootful Docker,
+  the host firewall check warns, and the printed command (`ufw route allow`, the trusted zone,
+  `DOCKER-USER`) clears it. The parser is tested on nft output shaped like each tool's, not on a
+  real install of each.
+- `[UNVERIFIED]` On an ifupdown host with `accept_ra` 1, the accept-ra check fails with the fix in
+  its hint, and the fix clears it.
+- `[UNVERIFIED]` An endpoint name whose AAAA record is a temporary address warns.
+- `[UNVERIFIED]` A host that keeps time with chrony or ntpd shows the clock warning even when the
+  clock is right (a known limit, docs/REQUIREMENTS.md).

@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/stuffam/drawbridge/internal/diag"
 	"github.com/stuffam/drawbridge/internal/model"
 	"github.com/stuffam/drawbridge/internal/service"
 	"github.com/stuffam/drawbridge/internal/store"
@@ -83,6 +84,30 @@ func NewDNSCheck(probes []service.DNSProbe) DNSCheck {
 		}
 	}
 	return c
+}
+
+// DiagnosticCheck is one host diagnostic's result (`drawbridge doctor`). Status is "pass",
+// "warn", "fail", or "skip"; Hint says how to fix a warning or a failure.
+type DiagnosticCheck struct {
+	ID     string `json:"id"`
+	Name   string `json:"name"`
+	Status string `json:"status"`
+	Detail string `json:"detail"`
+	Hint   string `json:"hint,omitempty"`
+}
+
+// Diagnostics is the list of checks, in the order the admin should read them.
+type Diagnostics struct {
+	Checks []DiagnosticCheck `json:"checks"`
+}
+
+// NewDiagnostics converts the diagnostics' results.
+func NewDiagnostics(checks []diag.Check) Diagnostics {
+	d := Diagnostics{Checks: []DiagnosticCheck{}}
+	for _, c := range checks {
+		d.Checks = append(d.Checks, DiagnosticCheck{ID: c.ID, Name: c.Name, Status: string(c.Status), Detail: c.Detail, Hint: c.Hint})
+	}
+	return d
 }
 
 // SettingsPatch changes some settings. Omitted fields stay as they are. DNSDefault resets

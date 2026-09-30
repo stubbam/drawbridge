@@ -44,13 +44,14 @@ Commands:
   client config NAME   Print a client's WireGuard config.
   client qr NAME       Show a client's config as a QR code for the WireGuard app.
   events               Show the event log: changes, logins, and corrected drift.
+  doctor               Check the host and network for problems that stop the VPN working.
   admin setup-token    Show the token that first-run setup in the web UI asks for.
   admin create NAME    Create the admin account with a random password.
   admin reset-password Give the admin account a new random password.
   version              Print the version.
   help                 Show this help.
 
-The server, client, events, and admin commands talk to the daemon, so run them as root
+The server, client, events, doctor, and admin commands talk to the daemon, so run them as root
 (sudo) or as a member of the drawbridge group. Run "drawbridge <command> -h" for a command's flags.
 `
 
@@ -77,6 +78,8 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 		return clientCmd(ctx, args[1:], stdin, stdout, stderr)
 	case "events":
 		return eventsCmd(ctx, args[1:], stdout, stderr)
+	case "doctor":
+		return doctorCmd(ctx, args[1:], stdout, stderr)
 	case "admin":
 		return adminCmd(ctx, args[1:], stdout, stderr)
 	case "version", "-version", "--version":

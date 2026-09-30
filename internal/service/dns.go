@@ -42,6 +42,11 @@ func (s *Service) ProbeDNS(ctx context.Context) ([]DNSProbe, error) {
 	if srv.IPv6.IsValid() {
 		addrs = append(addrs, srv.IPv6)
 	}
+	return s.probeAddrs(ctx, addrs), nil
+}
+
+// probeAddrs tests each address at once and returns the results in the same order.
+func (s *Service) probeAddrs(ctx context.Context, addrs []netip.Addr) []DNSProbe {
 	probe := s.DNSProbe
 	if probe == nil {
 		probe = func(ctx context.Context, a netip.Addr) DNSProbe { return ProbeResolver(ctx, netip.AddrPortFrom(a, 53)) }
@@ -57,7 +62,7 @@ func (s *Service) ProbeDNS(ctx context.Context) ([]DNSProbe, error) {
 		}()
 	}
 	wg.Wait()
-	return out, nil
+	return out
 }
 
 // ProbeResolver sends one recursive query for example.com to a resolver and reports

@@ -20,10 +20,12 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"testing/fstest"
 	"time"
 
 	"github.com/stuffam/drawbridge/internal/auth"
 	"github.com/stuffam/drawbridge/internal/control"
+	"github.com/stuffam/drawbridge/internal/diag"
 	"github.com/stuffam/drawbridge/internal/firewall"
 	"github.com/stuffam/drawbridge/internal/keys"
 	"github.com/stuffam/drawbridge/internal/lan"
@@ -768,5 +770,91 @@ func TestAdminAllowSetsTheUIAllowlist(t *testing.T) {
 	}
 	if reaches("100.64.10.9") {
 		t.Fatal("Tailscale still reaches the UI after removing it")
+	}
+}
+
+func TestDoctorCommand(t *testing.T) {
+	env := newFakeEnv(t)
+	env.svc.Diag = &diag.Host{
+		FS: fstest.MapFS{
+			"proc/sys/net/ipv4/ip_forward":          {Data: []byte("0\n")},
+			"proc/sys/net/ipv6/conf/all/forwarding": {Data: []byte("1\n")},
+		},
+		Network: func() (lan.Snapshot, error) { return lan.Snapshot{}, errors.New("no netlink here") },
+		Nft:     func(context.Context) ([]byte, error) { return nil, errors.New("no nft here") },
+	}
+	startDaemon(t, env)
+	sock := "--control=" + env.socket
+
+	r := runCLI("", "doctor", sock)
+	if r.code != 1 {
+		t.Fatalf("doctor with a failing check exited %d:\n%s%s", r.code, r.stdout, r.stderr)
+	}
+	for _, want := range []string{
+		"PASS  Tunnel",
+		"FAIL  Forwarding sysctls",
+		"      IPv4 forwarding is off, so VPN clients' traffic isn't routed.",
+		"      Fix: sudo sysctl -w net.ipv4.ip_forward=1. ",
+		"SKIP  Uplink",
+		" failed, ",
+	} {
+		if !strings.Contains(r.stdout, want) {
+			t.Errorf("doctor's output lacks %q:\n%s", want, r.stdout)
+		}
+	}
+	for _, line := range strings.Split(r.stdout, "\n") {
+		if strings.HasPrefix(line, "      ") && !strings.Contains(line, "Fix: ") && len(line) > doctorWrap {
+			t.Errorf("a detail line is %d columns wide: %q", len(line), line)
+		}
+	}
+	if r.stderr != "" {
+		t.Errorf("doctor wrote to stderr: %q", r.stderr)
+	}
+
+	if r := runCLI("", "doctor", "extra", sock); r.code != 2 || !strings.Contains(r.stderr, `unexpected argument "extra"`) {
+		t.Errorf("doctor with an argument: %+v", r)
+	}
+
+	// The diagnostics change nothing, so they leave no events.
+	if r := runCLI("", "events", sock); strings.Contains(r.stdout, "doctor") || strings.Contains(r.stdout, "diagnos") {
+		t.Errorf("doctor recorded an event:\n%s", r.stdout)
+	}
+}
+
+func TestDoctorWithoutDiagnostics(t *testing.T) {
+	env := newFakeEnv(t)
+	startDaemon(t, env)
+	if r := runCLI("", "doctor", "--control="+env.socket); r.code != 1 || !strings.Contains(r.stderr, "drawbridge:") || r.stdout != "" {
+		t.Errorf("doctor without diagnostics: %+v", r)
+	}
+	if r := runCLI("", "doctor", "--control="+filepath.Join(t.TempDir(), "none.sock")); r.code != 1 || !strings.Contains(r.stderr, "is drawbridge.service running?") {
+		t.Errorf("doctor without a daemon: %+v", r)
+	}
+}
+
+func TestPrintDiagnostics(t *testing.T) {
+	var out bytes.Buffer
+	failed := printDiagnostics(&out, views.Diagnostics{Checks: []views.DiagnosticCheck{
+		{Name: "One", Status: "pass", Detail: "Fine."},
+		{Name: "Two", Status: "warn", Detail: strings.Repeat("word ", 30), Hint: "do this && that"},
+		{Name: "Three", Status: "skip", Detail: "Couldn't read it.", Hint: "not shown"},
+	}})
+	if failed != 0 {
+		t.Errorf("%d failed, want 0: warnings don't count", failed)
+	}
+	want := `PASS  One
+      Fine.
+WARN  Two
+      word word word word word word word word word word word word word word
+      word word word word word word word word word word word word word word
+      word word
+      Fix: do this && that
+SKIP  Three
+      Couldn't read it.
+
+1 passed, 1 warning, 0 failed, 1 skipped
+`
+	if out.String() != want {
+		t.Errorf("output:\n%s\nwant:\n%s", out.String(), want)
 	}
 }

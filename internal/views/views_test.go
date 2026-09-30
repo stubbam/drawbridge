@@ -13,6 +13,7 @@ import (
 
 	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"
 
+	"github.com/stuffam/drawbridge/internal/diag"
 	"github.com/stuffam/drawbridge/internal/ipam"
 	"github.com/stuffam/drawbridge/internal/model"
 	"github.com/stuffam/drawbridge/internal/service"
@@ -36,6 +37,7 @@ func TestErrorStatus(t *testing.T) {
 		{model.ErrNoEndpoint, http.StatusConflict},
 		{store.ErrSetupDone, http.StatusConflict},
 		{store.ErrUserExists, http.StatusConflict},
+		{service.ErrNoDiagnostics, http.StatusNotImplemented},
 		{service.ErrBadLogin, http.StatusUnauthorized},
 		{store.ErrBadSetupToken, http.StatusForbidden},
 		{&service.RateLimitedError{Wait: 1}, http.StatusTooManyRequests},
@@ -45,6 +47,25 @@ func TestErrorStatus(t *testing.T) {
 		if got := ErrorStatus(c.err); got != c.want {
 			t.Errorf("ErrorStatus(%v) = %d, want %d", c.err, got, c.want)
 		}
+	}
+}
+
+func TestNewDiagnostics(t *testing.T) {
+	empty, err := json.Marshal(NewDiagnostics(nil))
+	if err != nil || string(empty) != `{"checks":[]}` {
+		t.Fatalf("no checks: %s, %v", empty, err)
+	}
+	got, err := json.Marshal(NewDiagnostics([]diag.Check{
+		{ID: "tunnel", Name: "Tunnel", Status: diag.Pass, Detail: "up"},
+		{ID: "dns", Name: "DNS", Status: diag.Fail, Detail: "silent", Hint: "fix it"},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `{"checks":[{"id":"tunnel","name":"Tunnel","status":"pass","detail":"up"},` +
+		`{"id":"dns","name":"DNS","status":"fail","detail":"silent","hint":"fix it"}]}`
+	if string(got) != want {
+		t.Fatalf("got  %s\nwant %s", got, want)
 	}
 }
 

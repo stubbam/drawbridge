@@ -178,3 +178,71 @@ func TestCache(t *testing.T) {
 		t.Fatal("an expired cache wasn't refreshed")
 	}
 }
+
+func TestSnapshot(t *testing.T) {
+	const (
+		eth0  = 2
+		wlan0 = 3
+		wg0   = 5
+	)
+	names := map[int]string{eth0: "eth0", wlan0: "wlan0", wg0: "wg0"}
+	v4def := netip.PrefixFrom(netip.IPv4Unspecified(), 0)
+	v6def := netip.PrefixFrom(netip.IPv6Unspecified(), 0)
+	routes := []route{
+		{Dst: v4def, Links: []int{eth0, wlan0}, Gateway: true}, // a multipath default route
+		{Dst: netip.MustParsePrefix("192.168.4.0/22"), Links: []int{eth0}},
+		{Dst: v6def, Links: []int{eth0}, Gateway: true},
+		{Dst: netip.MustParsePrefix("2001:db8:1234:5600::/64"), Links: []int{eth0}},
+		{Dst: netip.MustParsePrefix("10.8.0.0/24"), Links: []int{wg0}},
+		{Dst: v4def, Links: []int{99}, Gateway: true}, // an interface that has gone away
+	}
+	ifAddrs := map[int][]addrInfo{
+		eth0: {
+			{Addr: netip.MustParseAddr("192.168.4.10")},
+			{Addr: netip.MustParseAddr("2001:db8:1234:5600::10")},
+			{Addr: netip.MustParseAddr("2001:db8:1234:5600::aaaa"), Temporary: true},
+			{Addr: netip.MustParseAddr("2001:db8:1234:5600::bbbb"), Deprecated: true},
+		},
+		wg0: {{Addr: netip.MustParseAddr("10.8.0.1")}},
+		99:  {{Addr: netip.MustParseAddr("192.0.2.1")}},
+	}
+	got := snapshot(routes, ifAddrs, names)
+
+	if want := []string{"eth0", "wlan0"}; !slices.Equal(got.Uplinks4, want) {
+		t.Errorf("Uplinks4 = %v, want %v", got.Uplinks4, want)
+	}
+	if want := []string{"eth0"}; !slices.Equal(got.Uplinks6, want) {
+		t.Errorf("Uplinks6 = %v, want %v", got.Uplinks6, want)
+	}
+	if want := prefixes("192.168.4.0/22", "2001:db8:1234:5600::/64"); !slices.Equal(got.LAN, want) {
+		t.Errorf("LAN = %v, want %v", got.LAN, want)
+	}
+	want := []HostAddr{
+		{Interface: "eth0", Addr: netip.MustParseAddr("192.168.4.10")},
+		{Interface: "eth0", Addr: netip.MustParseAddr("2001:db8:1234:5600::10")},
+		{Interface: "eth0", Addr: netip.MustParseAddr("2001:db8:1234:5600::aaaa"), Temporary: true},
+		{Interface: "eth0", Addr: netip.MustParseAddr("2001:db8:1234:5600::bbbb"), Deprecated: true},
+		{Interface: "wg0", Addr: netip.MustParseAddr("10.8.0.1")},
+	}
+	if !slices.Equal(got.Addrs, want) {
+		t.Errorf("Addrs = %v, want %v", got.Addrs, want)
+	}
+
+	if empty := snapshot(nil, nil, nil); len(empty.Uplinks4)+len(empty.Uplinks6)+len(empty.LAN)+len(empty.Addrs) != 0 {
+		t.Errorf("an empty host has a snapshot: %+v", empty)
+	}
+}
+
+func TestStableAddrsDropTemporaryAndDeprecated(t *testing.T) {
+	in := map[int][]addrInfo{2: {
+		{Addr: netip.MustParseAddr("2001:db8::10")},
+		{Addr: netip.MustParseAddr("2001:db8::aaaa"), Temporary: true},
+		{Addr: netip.MustParseAddr("2001:db8::bbbb"), Deprecated: true},
+	}}
+	if got, want := stableAddrs(in)[2], addrs("2001:db8::10"); !slices.Equal(got, want) {
+		t.Errorf("stableAddrs = %v, want %v", got, want)
+	}
+	if got := plainAddrs(in)[2]; len(got) != 3 {
+		t.Errorf("plainAddrs = %v, want all three", got)
+	}
+}

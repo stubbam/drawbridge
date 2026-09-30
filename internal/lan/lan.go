@@ -8,6 +8,7 @@ package lan
 import (
 	"net/netip"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 )
@@ -106,6 +107,101 @@ func selectLAN(routes []route, addrs map[int][]netip.Addr) []netip.Prefix {
 		}
 	}
 	return Normalize(out)
+}
+
+// addrInfo is one interface address and the kernel's flags on it.
+type addrInfo struct {
+	Addr       netip.Addr
+	Temporary  bool
+	Deprecated bool
+}
+
+// plainAddrs and stableAddrs flatten the read addresses. The stable ones leave out IPv6
+// temporary (privacy) and deprecated addresses.
+func plainAddrs(in map[int][]addrInfo) map[int][]netip.Addr {
+	return flattenAddrs(in, func(addrInfo) bool { return true })
+}
+
+func stableAddrs(in map[int][]addrInfo) map[int][]netip.Addr {
+	return flattenAddrs(in, func(a addrInfo) bool { return !a.Temporary && !a.Deprecated })
+}
+
+func flattenAddrs(in map[int][]addrInfo, keep func(addrInfo) bool) map[int][]netip.Addr {
+	out := map[int][]netip.Addr{}
+	for link, as := range in {
+		for _, a := range as {
+			if keep(a) {
+				out[link] = append(out[link], a.Addr)
+			}
+		}
+	}
+	return out
+}
+
+// HostAddr is one of this machine's addresses.
+type HostAddr struct {
+	Interface string
+	Addr      netip.Addr
+	// Temporary marks an IPv6 privacy address, which changes about daily; Deprecated one
+	// that's being phased out.
+	Temporary, Deprecated bool
+}
+
+// Snapshot is the host's network as the diagnostics see it.
+type Snapshot struct {
+	// Uplinks4 and Uplinks6 are the names of the interfaces the IPv4 and IPv6 default
+	// routes leave by, sorted.
+	Uplinks4, Uplinks6 []string
+	// LAN is what Detect returns.
+	LAN   []netip.Prefix
+	Addrs []HostAddr
+}
+
+// snapshot builds a Snapshot. names maps an interface's index to its name; a link
+// without one is left out.
+func snapshot(routes []route, addrs map[int][]addrInfo, names map[int]string) Snapshot {
+	snap := Snapshot{LAN: selectLAN(routes, plainAddrs(addrs))}
+	uplinks4, uplinks6 := map[string]bool{}, map[string]bool{}
+	for _, r := range routes {
+		if r.Dst.Bits() != 0 {
+			continue
+		}
+		set := uplinks6
+		if r.Dst.Addr().Is4() {
+			set = uplinks4
+		}
+		for _, l := range r.Links {
+			if name, ok := names[l]; ok {
+				set[name] = true
+			}
+		}
+	}
+	snap.Uplinks4, snap.Uplinks6 = sortedKeys(uplinks4), sortedKeys(uplinks6)
+	for link, as := range addrs {
+		name, ok := names[link]
+		if !ok {
+			continue
+		}
+		for _, a := range as {
+			snap.Addrs = append(snap.Addrs, HostAddr{Interface: name, Addr: a.Addr, Temporary: a.Temporary, Deprecated: a.Deprecated})
+		}
+	}
+	slices.SortFunc(snap.Addrs, func(a, b HostAddr) int {
+		if c := strings.Compare(a.Interface, b.Interface); c != 0 {
+			return c
+		}
+		return a.Addr.Compare(b.Addr)
+	})
+	return snap
+}
+
+func sortedKeys(m map[string]bool) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	slices.Sort(out)
+	return out
 }
 
 // selectHostAddrs returns the addresses inside the LAN's subnets, sorted.

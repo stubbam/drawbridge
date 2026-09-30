@@ -110,6 +110,12 @@ func (c *Client) Settings(ctx context.Context) (views.SettingsView, error) {
 	return v, c.do(ctx, http.MethodGet, "/v1/settings", nil, &v)
 }
 
+// Diagnostics runs the daemon's host checks (`drawbridge doctor`).
+func (c *Client) Diagnostics(ctx context.Context) (views.Diagnostics, error) {
+	var v views.Diagnostics
+	return v, c.do(ctx, http.MethodGet, "/v1/diagnostics", nil, &v)
+}
+
 // DNSCheck asks the server's VPN addresses whether a DNS resolver answers on them.
 func (c *Client) DNSCheck(ctx context.Context) (views.DNSCheck, error) {
 	var v views.DNSCheck

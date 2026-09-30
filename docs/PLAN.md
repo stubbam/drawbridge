@@ -13,6 +13,7 @@ in the product name.
 > so are the session tracker and traffic history from M4. The kernel tests pass in CI, and
 > `docs/MANUAL_CHECKLIST.md` records what has run on real hardware. The rest of M4 (the log
 > viewer's CSV export, structured journald fields, and AdGuard Home integration) is next.
+> `drawbridge doctor`, the first slice of M5, is built too; the diagnostics page isn't.
 > `docs/REQUIREMENTS.md` lists what the host and network need, and the known roadblocks.
 
 ---
@@ -649,16 +650,30 @@ stateDiagram-v2
 ### 6.6 System
 
 - **Diagnostics** (the web page and `drawbridge doctor` run the same checks). Each check shows
-  pass, warn, or fail with a fix hint:
-  - Kernel module loaded.
+  pass, warn, or fail with a fix hint, or skip when the daemon can't read what the check needs:
+  - The tunnel is up, and the kernel module is loaded.
   - Forwarding sysctls set, and `accept_ra` correct.
   - Uplink interface detected.
   - VPN subnets don't overlap the LAN.
+  - Drawbridge's own nftables table is loaded.
   - Host firewall and Docker `FORWARD` policy aren't blocking traffic.
-  - The FQDN's A and AAAA records match the current public or stable addresses.
+  - Clients' DNS servers answer, when they're this server's own VPN addresses.
+  - The FQDN resolves to an address a client on the internet can reach, and its AAAA record
+    isn't a temporary address.
   - Time is synced.
   - Free disk space.
   - The TLS certificate hasn't expired.
+
+  *`drawbridge doctor` is built (`internal/diag`); the web page is not. The daemon runs the
+  checks, because `nft -j list ruleset` needs `CAP_NET_ADMIN`, and the CLI prints them over the
+  control socket (`GET /v1/diagnostics`). It changes nothing, so it records no events. Its
+  exit status is 1 when a check failed, and 0 otherwise. Known limits:*
+  - *Comparing the A record with the current public IPv4 address (§5.6) isn't built (§16).*
+  - *The host firewall check is a best guess from `nft -j list ruleset`: it doesn't model rule
+    order, can't see iptables-legacy, and doesn't check input-chain drops of UDP 51820.*
+  - *The clock check recognizes only systemd-timesyncd, so a host that uses chrony or ntpd sees
+    a warning.*
+  - *The overlap hint is limited because the VPN's subnets can't change after setup.*
 - **Backup and restore:**
   - One-click download of a consistent snapshot, optionally encrypted with a passphrase
     (Argon2id key derivation + XChaCha20-Poly1305).
@@ -903,7 +918,7 @@ drawbridge/                repository root
 │   ├── api/               HTTP router, handlers, OpenAPI, SSE, static SPA
 │   ├── clientconf/        client .conf rendering
 │   ├── adguard/           AdGuard Home REST client (name sync, query log)
-│   ├── hostcheck/         diagnostics (shared by UI and `doctor`)
+│   ├── diag/              diagnostics (shared by UI and `doctor`)
 │   └── control/           unix-socket server/client for the CLI
 ├── web/                   SvelteKit SPA (build output embedded)
 ├── packaging/
@@ -1010,7 +1025,8 @@ Each milestone ends in a usable, tested state.
   tracking, and encrypted backup/restore.
 - The diagnostics page and `drawbridge doctor`, the upgrade and migration test matrix, and the docs
   (install, router setup for IPv4 and IPv6, dynamic DNS and DNS records, troubleshooting),
-  growing out of `docs/REQUIREMENTS.md`.
+  growing out of `docs/REQUIREMENTS.md`. *`drawbridge doctor` is built (§6.6); the diagnostics
+  page is not.*
 - **Exit:**
   - The security checklist passes.
   - Upgrading from v0.x keeps all data and keeps the tunnel up.
@@ -1088,3 +1104,11 @@ Each milestone ends in a usable, tested state.
 1. **Routed IPv6 (M6):** it depends on the router accepting IPv6 static routes and on the prefix
    size the ISP delegates, both of which vary by network. The design picks between a routed /64
    and the NDP proxy (§5.2) based on what the network supports.
+2. **Whether the doctor compares the A record with the public IPv4 address (§5.6).** Learning the
+   current public address takes a request to a third party (a "what's my IP" service), which is
+   the only outside lookup the daemon would make, from a project that otherwise stays local. What
+   `drawbridge doctor` does instead: warn when the endpoint name resolves to an address a client
+   on the internet can't reach (private, CGNAT, or link-local), and when its AAAA record is a
+   temporary address. That catches a stale record only when it points somewhere unroutable, not
+   when it points at an old public address. The choices are to leave it, or to add the lookup as
+   an opt-in setting that names the service.

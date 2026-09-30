@@ -19,6 +19,7 @@ import (
 	"github.com/stuffam/drawbridge/internal/api"
 	"github.com/stuffam/drawbridge/internal/auth"
 	"github.com/stuffam/drawbridge/internal/control"
+	"github.com/stuffam/drawbridge/internal/diag"
 	"github.com/stuffam/drawbridge/internal/firewall"
 	"github.com/stuffam/drawbridge/internal/keys"
 	"github.com/stuffam/drawbridge/internal/lan"
@@ -103,6 +104,10 @@ func serve(ctx context.Context, args []string, stderr io.Writer) int {
 		log.Error("can't start", "err", err)
 		return 1
 	}
+
+	host := diag.NewHost(filepath.Dir(*dbPath))
+	host.CertNotAfter = cert.Leaf.NotAfter
+	svc.Diag = &host
 
 	ctl, err := control.Listen(*socket)
 	if err != nil {

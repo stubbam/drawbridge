@@ -14,11 +14,12 @@ Drawbridge is a self-hosted web manager for a WireGuard VPN server. It installs 
 
 It supports both IPv4 and IPv6. wg-easy is the feature reference; none of its code is used.
 
-**Status: M0–M3 are built, and the session tracker and traffic history from M4 shipped ahead of
-the rest of it (2026-09-26–28). Nearly every check in docs/MANUAL_CHECKLIST.md has passed on the
-reference platform (a Raspberry Pi 5 running Debian 13); what's left there needs a laptop or a
-second Tailscale device. docs/REQUIREMENTS.md lists what a host and network need, and the known
-roadblocks on other setups.** What exists:
+**Status: M0–M3 are built, the session tracker and traffic history from M4 shipped ahead of
+the rest of it (2026-09-26–28), and `drawbridge doctor` from M5 followed (2026-09-29). Nearly
+every check in docs/MANUAL_CHECKLIST.md has passed on the reference platform (a Raspberry Pi 5
+running Debian 13); what's left there needs a laptop or a second Tailscale device.
+docs/REQUIREMENTS.md lists what a host and network need, and the known roadblocks on other
+setups.** What exists:
 
 - The tunnel: `drawbridge tunnel up|down`, run by `drawbridge-tunnel.service`.
 - The daemon's reconciler and drift loop, and its connection tracker
@@ -32,8 +33,12 @@ roadblocks on other setups.** What exists:
   detail page. Also ahead of the rest of M4 (the log viewer's CSV export, structured journald
   fields, and AdGuard Home sync aren't built yet).
 - The CLI, which talks to the daemon over the control socket: `server show|set`,
-  `client list|add|show|pause|resume|rename|delete|config|qr`, `events`, and
+  `client list|add|show|pause|resume|rename|delete|config|qr`, `events`, `doctor`, and
   `admin setup-token|create|reset-password`.
+- `drawbridge doctor`, the first slice of M5 (2026-09-29): 13 host and network checks, each with
+  a fix hint, run by the daemon (`internal/diag`) and printed by the CLI. Exit status 1 when any
+  check fails, 0 otherwise. The web diagnostics page isn't built yet, and neither is the
+  comparison of the endpoint's A record with the current public IPv4 address (docs/PLAN.md §16).
 - The authenticated JSON API over HTTPS on port 51821 (`internal/api/openapi.json`): first-run
   setup, sessions, server settings, clients, and the event log, reachable only from the LAN and
   the VPN.
@@ -403,6 +408,18 @@ routes and on the ISP's delegated prefix size, which vary by network.
 the router allows inbound UDP 51820 to the host's stable address (with a real client,
 2026-09-28).
 
+**`drawbridge doctor`** (2026-09-29, the reference platform):
+
+- Run as `drawbridge.service`'s sandbox (a transient `systemd-run` unit with the unit file's
+  hardening properties, `--backend fake`, and a scratch state directory), every read worked:
+  `/proc/sys`, `/sys/module`, `/run/systemd/timesync/synchronized`, netlink, `statfs`, the
+  system resolver, and `nft -j list ruleset` with only `CAP_NET_ADMIN`. A binary under `/home`
+  can't run in such a unit (`ProtectHome=yes`), so copy it somewhere under `/usr/local` first.
+- The integration test (`test/integration/doctor_test.go`) drives the real kernel and real
+  `nft -j` output: `accept_ra` 1 fails and 2 passes, forwarding off fails for each family, and
+  another table's `policy drop` forward chain warns until a rule accepts `wg0`.
+- `fwd` is an nftables keyword, so a chain can't be named that.
+
 ## Where things live
 
 - `docs/PLAN.md` is the specification. Read it first. §13 has the planned repository layout.
@@ -410,7 +427,7 @@ the router allows inbound UDP 51820 to the host's stable address (with a real cl
 - `docs/MANUAL_CHECKLIST.md` records what has actually run on real hardware.
 - `docs/REQUIREMENTS.md` lists what a host and network need, and the known roadblocks.
 - `cmd/drawbridge/` is the binary: `serve` (serve.go), `tunnel`, `server`, `client`,
-  `events` and `admin` (admin_cmd.go), `version`, and `help`.
+  `events` and `admin` (admin_cmd.go), `doctor` (doctor_cmd.go), `version`, and `help`.
 - The core engine, in `internal/`:
   - `model/` holds the domain types and validation, and `store/` is SQLite with embedded
     migrations.
@@ -422,6 +439,11 @@ the router allows inbound UDP 51820 to the host's stable address (with a real cl
     sessions (auth.go), and the event log (events.go). `control/` is the Unix-socket API and
     its client, and `views/` holds the JSON shapes both APIs share.
   - `clientconf/` renders client configs and terminal QR codes.
+  - `diag/` holds the doctor's checks. The daemon runs them, not the CLI, because `nft -j list
+    ruleset` needs `CAP_NET_ADMIN`. Every read goes through `diag.Host` (an `fs.FS` rooted at
+    `/`, plus hooks for the routing table, the resolver, `statfs`, and nft), so a check is
+    tested by handing it a `fstest.MapFS`. A check that can't read what it needs is a skip,
+    never a fail. `service.Diagnose` feeds it the database's and the tunnel's state.
   - `auth/` has password hashing, tokens, and the login rate limiter; `lan/` detects the LAN
     and builds the admin allowlist; `tlscert/` makes the self-signed certificate.
 - `internal/api/` serves the JSON API (documented in `openapi.json`, with the security

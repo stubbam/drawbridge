@@ -14,6 +14,7 @@ import (
 
 	"github.com/stuffam/drawbridge/internal/auth"
 	"github.com/stuffam/drawbridge/internal/clientconf"
+	"github.com/stuffam/drawbridge/internal/diag"
 	"github.com/stuffam/drawbridge/internal/model"
 	"github.com/stuffam/drawbridge/internal/reconcile"
 	"github.com/stuffam/drawbridge/internal/store"
@@ -38,6 +39,9 @@ type Service struct {
 	// DNSProbe tests one resolver address for ProbeDNS; nil sends a real query to port 53.
 	// The fake backend and the tests replace it.
 	DNSProbe func(ctx context.Context, addr netip.Addr) DNSProbe
+	// Diag is what Diagnose reads the host with (diagnose.go); nil means the daemon
+	// can't run the diagnostics.
+	Diag *diag.Host
 
 	// TrafficRawInterval, TrafficRawRetention, and TrafficHourlyRetention configure the
 	// traffic-history sampler (traffic.go); zero means the Default* constant there. They

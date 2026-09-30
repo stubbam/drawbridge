@@ -4,6 +4,11 @@ Drawbridge was developed and tested on one home network. This page lists what it
 it has been tested on, and the places where other setups commonly differ. Read it before you
 install: a few of these can leave VPN clients without DNS, or the host without IPv6.
 
+After you install, run `sudo drawbridge doctor`. It checks the host for most of what's below (the
+tunnel, forwarding, `accept_ra`, a firewall that drops forwarded traffic, DNS on the VPN
+addresses, the endpoint, the clock, disk space, and the certificate), prints a fix for each
+problem, and changes nothing. It exits with status 1 if a check failed.
+
 ## What Drawbridge needs
 
 - **Linux with systemd, from the Debian family.** Drawbridge ships as a `.deb` for arm64 and
@@ -100,6 +105,9 @@ blocks VPN clients' traffic too, and Drawbridge can't override it:
 *Symptom:* clients connect (the handshake succeeds), but nothing loads through the tunnel.
 
 *Workaround:* allow forwarding from and to the WireGuard interface (`wg0`) in that firewall.
+`drawbridge doctor` looks for this and prints the command for ufw, firewalld, or Docker. It reads
+nftables' rules, so it's a best guess: it can't see rules in iptables-legacy, and it doesn't model
+rule order.
 
 ### Don't put the admin UI behind a reverse proxy on the same host
 
@@ -122,4 +130,6 @@ internet).
 
 TLS certificates and WireGuard's handshakes depend on the time. A host without a battery-backed
 clock, such as a Raspberry Pi without its RTC battery, needs network time
-(`systemd-timesyncd`) running before it can be trusted.
+(`systemd-timesyncd`) running before it can be trusted. `drawbridge doctor` recognizes only
+`systemd-timesyncd`: on a host that keeps time with chrony or ntpd, its clock check warns even
+when the clock is right.

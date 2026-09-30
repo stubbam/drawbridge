@@ -16,6 +16,7 @@ import (
 
 	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"
 
+	"github.com/stuffam/drawbridge/internal/diag"
 	"github.com/stuffam/drawbridge/internal/firewall"
 	"github.com/stuffam/drawbridge/internal/keys"
 	"github.com/stuffam/drawbridge/internal/reconcile"
@@ -63,6 +64,7 @@ func newTestEnv(t *testing.T, tunnelUp bool) *testEnv {
 	}
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	svc := &service.Service{Store: st, Rec: rec, WG: backend, Log: log,
+		Diag: &diag.Host{Nft: func(context.Context) ([]byte, error) { return []byte(`{"nftables":[]}`), nil }},
 		// A resolver answers on IPv4 only, so no test sends a real query.
 		DNSProbe: func(_ context.Context, a netip.Addr) service.DNSProbe {
 			return service.DNSProbe{Answered: a.Is4(), Detail: "probed " + a.String()}
@@ -148,6 +150,36 @@ func TestDNSCheck(t *testing.T) {
 	if len(check.Results) != 2 || check.Results[1].Answered || len(check.Usable) != 1 ||
 		check.Usable[0] != netip.MustParseAddr("10.8.0.1") {
 		t.Fatalf("%+v", check)
+	}
+}
+
+func TestDiagnostics(t *testing.T) {
+	ctx := context.Background()
+	up := newTestEnv(t, true)
+	d, err := up.client.Diagnostics(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	statuses := map[string]string{}
+	for _, c := range d.Checks {
+		statuses[c.ID] = c.Status
+		if c.Name == "" || c.Detail == "" {
+			t.Errorf("check %+v lacks a name or a detail", c)
+		}
+	}
+	if len(d.Checks) != 13 || statuses["tunnel"] != "pass" {
+		t.Fatalf("with the tunnel up: %d checks, %v", len(d.Checks), statuses)
+	}
+
+	down := newTestEnv(t, false)
+	d, err = down.client.Diagnostics(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range d.Checks {
+		if c.ID == "tunnel" && (c.Status != "fail" || c.Hint == "") {
+			t.Fatalf("with the tunnel down: %+v, want a fail with a hint", c)
+		}
 	}
 }
 

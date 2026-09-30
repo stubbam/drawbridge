@@ -1770,13 +1770,17 @@
         "in": "query",
         "schema": {
           "enum": [
+            "1m",
+            "1h",
+            "12h",
             "24h",
             "7d",
+            "30d",
             "90d"
           ],
           "default": "24h"
         },
-        "description": "24h reads raw samples; 7d and 90d read the hourly rollup."
+        "description": "1m reads the last minute's polls (one per 5 seconds), which the daemon keeps in memory only, so a restart empties it. 1h, 12h, and 24h read raw samples; 7d, 30d, and 90d read the hourly rollup."
       }
     },
     "headers": {

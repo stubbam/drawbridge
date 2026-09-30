@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/stuffam/drawbridge/internal/ipam"
@@ -71,20 +72,39 @@ func ParseEventFilter(q url.Values) (store.EventFilter, error) {
 	return f, nil
 }
 
-// ParseTrafficRange reads "range" (24h, 7d, or 90d; "" means 24h) and returns the
-// resolution to read the store at and how far back to look. The caller computes "since"
+// trafficRanges are the chart ranges the API accepts, shortest first. Each reads the store at
+// the finest resolution that still gives the chart a useful number of points: the last minute
+// from the in-memory polls (the stored buckets are a minute wide), up to a day from the "raw"
+// buckets, and anything longer from the hourly rollup.
+var trafficRanges = []struct {
+	name       string
+	resolution string
+	lookback   time.Duration
+}{
+	{"1m", service.ResolutionLive, time.Minute},
+	{"1h", store.ResolutionRaw, time.Hour},
+	{"12h", store.ResolutionRaw, 12 * time.Hour},
+	{"24h", store.ResolutionRaw, 24 * time.Hour},
+	{"7d", store.ResolutionHourly, 7 * 24 * time.Hour},
+	{"30d", store.ResolutionHourly, 30 * 24 * time.Hour},
+	{"90d", store.ResolutionHourly, 90 * 24 * time.Hour},
+}
+
+// ParseTrafficRange reads "range" (1m, 1h, 12h, 24h, 7d, 30d, or 90d; "" means 24h) and returns
+// the resolution to read the store at and how far back to look. The caller computes "since"
 // with its own clock, so this has no time dependency of its own.
 func ParseTrafficRange(v string) (resolution string, lookback time.Duration, err error) {
-	switch v {
-	case "", "24h":
-		return store.ResolutionRaw, 24 * time.Hour, nil
-	case "7d":
-		return store.ResolutionHourly, 7 * 24 * time.Hour, nil
-	case "90d":
-		return store.ResolutionHourly, 90 * 24 * time.Hour, nil
-	default:
-		return "", 0, &model.InvalidError{Err: fmt.Errorf("range must be 24h, 7d, or 90d, not %q", v)}
+	if v == "" {
+		v = "24h"
 	}
+	names := make([]string, 0, len(trafficRanges))
+	for _, r := range trafficRanges {
+		if r.name == v {
+			return r.resolution, r.lookback, nil
+		}
+		names = append(names, r.name)
+	}
+	return "", 0, &model.InvalidError{Err: fmt.Errorf("range must be one of %s, not %q", strings.Join(names, ", "), v)}
 }
 
 // MaxSessionHistory is the most session-history rows one request returns.

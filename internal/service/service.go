@@ -52,6 +52,10 @@ type Service struct {
 	// It's runtime state, not a dependency, and is touched only from the connTrackLoop
 	// goroutine, so it needs no lock.
 	trafficBuf *trafficBuffer
+	// live is the last couple of minutes of polls, for the chart's shortest range. Unlike
+	// trafficBuf, API requests read it while the connTrackLoop goroutine writes it, so it
+	// has its own lock.
+	live liveTraffic
 }
 
 func (s *Service) now() time.Time {

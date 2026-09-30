@@ -13,6 +13,7 @@
 	import { clientState, endpointAddress, formatBytes } from '$lib/format';
 	import { poll } from '$lib/poll';
 	import { sortClients, storedSort, storeSort, type SortKey } from '$lib/sort';
+	import { refreshMs } from '$lib/traffic';
 	import CopyButton from '$lib/components/CopyButton.svelte';
 	import RangeSelect from '$lib/components/RangeSelect.svelte';
 	import SortSelect from '$lib/components/SortSelect.svelte';
@@ -70,12 +71,10 @@
 	let sorted = $derived(sortClients(clients, sort, now));
 
 	$effect(() => poll(load, 5000));
-	// Traffic history is minute-granularity at best, so it doesn't need the 5s peer-status
-	// cadence above; changing the range restarts this poll, for an immediate refetch.
-	$effect(() => {
-		void trafficRange;
-		return poll(loadTraffic, 60000);
-	});
+	// Traffic history is minute-granularity at best (the 1 minute range is the exception), so it
+	// doesn't need the 5s peer-status cadence above; changing the range restarts this poll, for
+	// an immediate refetch.
+	$effect(() => poll(loadTraffic, refreshMs(trafficRange)));
 	$effect(() => {
 		fetchVersion().then(
 			(v) => (version = v),

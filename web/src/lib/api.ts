@@ -151,8 +151,11 @@ export interface EventFilter {
 	limit?: number;
 }
 
-/** 24h reads raw samples; 7d and 90d read the hourly rollup. */
-export type TrafficRange = '24h' | '7d' | '90d';
+/**
+ * 1m reads the last minute's polls, which the daemon keeps in memory. 1h, 12h, and 24h read raw
+ * samples; 7d, 30d, and 90d read the hourly rollup.
+ */
+export type TrafficRange = '1m' | '1h' | '12h' | '24h' | '7d' | '30d' | '90d';
 
 export interface TrafficSample {
 	bucket_start: string;

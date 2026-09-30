@@ -24,6 +24,7 @@
 		formatTime
 	} from '$lib/format';
 	import { poll } from '$lib/poll';
+	import { refreshMs } from '$lib/traffic';
 	import CopyButton from '$lib/components/CopyButton.svelte';
 	import RangeSelect from '$lib/components/RangeSelect.svelte';
 	import Result from '$lib/components/Result.svelte';
@@ -78,13 +79,10 @@
 			// load() above already shows a real error; the history sections just stay as they were.
 		}
 	}
-	// Traffic and session history change far less often than live peer status, so this
-	// polls on its own, slower cadence; changing the range restarts it for an immediate
-	// refetch.
-	$effect(() => {
-		void trafficRange;
-		return poll(loadHistory, 60000);
-	});
+	// Traffic and session history change far less often than live peer status (the 1 minute
+	// range is the exception), so this polls on its own cadence; changing the range restarts it
+	// for an immediate refetch.
+	$effect(() => poll(loadHistory, refreshMs(trafficRange)));
 
 	// A client that was just added shows its QR code at once.
 	$effect(() => {

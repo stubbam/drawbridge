@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	"github.com/stuffam/drawbridge/internal/model"
@@ -38,6 +39,70 @@ func (s *Service) trafficHourlyRetention() time.Duration {
 		return s.TrafficHourlyRetention
 	}
 	return DefaultTrafficHourlyRetention
+}
+
+// ResolutionLive asks ClientTraffic or TotalTraffic for the in-memory polls below instead of
+// stored buckets. The stored "raw" buckets are too coarse for the chart's 1 minute range: they
+// are a minute wide by default, and the newest isn't flushed until its minute is over.
+const ResolutionLive = "live"
+
+// liveRetention is how long a poll stays in memory. It's longer than the 1 minute range reads,
+// so a request never finds its window already trimmed.
+const liveRetention = 2 * time.Minute
+
+// liveBytes is what one client moved during one poll.
+type liveBytes struct{ rx, tx int64 }
+
+// liveTick is one TrackConnections poll: the bytes each connected client moved since the
+// previous one. A client that wasn't connected, or whose counters were only just baselined
+// or reset, isn't in it, which reads as zero.
+type liveTick struct {
+	at      time.Time
+	clients map[string]liveBytes
+}
+
+// liveTraffic keeps the last liveRetention of polls in memory only: nothing here is written to
+// the database (CLAUDE.md, "Protect the SD card"), so a restart starts it empty and the 1
+// minute chart fills back in within a minute.
+type liveTraffic struct {
+	mu    sync.Mutex
+	ticks []liveTick
+}
+
+func (l *liveTraffic) add(t liveTick) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	cutoff := t.at.Add(-liveRetention)
+	i := 0
+	for i < len(l.ticks) && l.ticks[i].at.Before(cutoff) {
+		i++
+	}
+	l.ticks = append(l.ticks[i:], t)
+}
+
+// samples returns one sample per poll since the given time, oldest first: clientID's bytes,
+// or every client's summed when clientID is "". The poll's time stands in for the bucket
+// start, and a poll in which the client moved nothing is a zero sample, not a gap.
+func (l *liveTraffic) samples(clientID string, since time.Time) []store.TrafficSample {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	var out []store.TrafficSample
+	for _, t := range l.ticks {
+		if t.at.Before(since) {
+			continue
+		}
+		var sum liveBytes
+		if clientID == "" {
+			for _, b := range t.clients {
+				sum.rx += b.rx
+				sum.tx += b.tx
+			}
+		} else {
+			sum = t.clients[clientID]
+		}
+		out = append(out, store.TrafficSample{ClientID: clientID, BucketStart: t.at, RxBytes: sum.rx, TxBytes: sum.tx})
+	}
+	return out
 }
 
 // trafficState is one client's running counters, held only in memory (a crash loses at
@@ -89,6 +154,7 @@ func (s *Service) SampleTraffic(ctx context.Context, clients []model.Client, pee
 		buf.bucket = bucket
 	}
 
+	tick := liveTick{at: s.now().UTC().Truncate(time.Second), clients: map[string]liveBytes{}}
 	for _, c := range clients {
 		p, connected := peers[c.PublicKey.String()]
 		if !connected {
@@ -106,10 +172,13 @@ func (s *Service) SampleTraffic(ctx context.Context, clients []model.Client, pee
 			st.lastRx, st.lastTx = p.ReceiveBytes, p.SendBytes
 			continue
 		}
-		st.pendingRx += p.ReceiveBytes - st.lastRx
-		st.pendingTx += p.SendBytes - st.lastTx
+		dRx, dTx := p.ReceiveBytes-st.lastRx, p.SendBytes-st.lastTx
+		st.pendingRx += dRx
+		st.pendingTx += dTx
 		st.lastRx, st.lastTx = p.ReceiveBytes, p.SendBytes
+		tick.clients[c.ID] = liveBytes{rx: dRx, tx: dTx}
 	}
+	s.live.add(tick)
 }
 
 // flushTraffic writes every client's accumulated bytes for the buffer's current bucket,
@@ -153,18 +222,26 @@ func (s *Service) TrafficRetention(ctx context.Context) {
 	}
 }
 
-// ClientTraffic returns one client's traffic history at resolution, looking back
-// lookback from now.
+// ClientTraffic returns one client's traffic history at resolution (a store resolution, or
+// ResolutionLive), looking back lookback from now.
 func (s *Service) ClientTraffic(ctx context.Context, ref store.Ref, resolution string, lookback time.Duration) ([]store.TrafficSample, error) {
 	c, err := s.Store.Client(ctx, ref)
 	if err != nil {
 		return nil, err
 	}
-	return s.Store.ClientTraffic(ctx, c.ID, resolution, s.now().Add(-lookback))
+	since := s.now().Add(-lookback)
+	if resolution == ResolutionLive {
+		return s.live.samples(c.ID, since), nil
+	}
+	return s.Store.ClientTraffic(ctx, c.ID, resolution, since)
 }
 
 // TotalTraffic is the same as ClientTraffic, summed across every client — the
 // dashboard's all-clients aggregate.
 func (s *Service) TotalTraffic(ctx context.Context, resolution string, lookback time.Duration) ([]store.TrafficSample, error) {
-	return s.Store.TotalTraffic(ctx, resolution, s.now().Add(-lookback))
+	since := s.now().Add(-lookback)
+	if resolution == ResolutionLive {
+		return s.live.samples("", since), nil
+	}
+	return s.Store.TotalTraffic(ctx, resolution, since)
 }

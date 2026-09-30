@@ -24,7 +24,7 @@ test('the dashboard shows a total-throughput chart with a working range control'
 	});
 
 	await login(page);
-	await expect(page.getByRole('img', { name: 'All Clients chart' })).toBeVisible();
+	await expect(page.getByRole('img', { name: 'Total Throughput chart' })).toBeVisible();
 	expect(requestedRanges).toContain('24h');
 
 	await page.getByLabel('Range').selectOption('7d');

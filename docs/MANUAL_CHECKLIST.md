@@ -303,7 +303,7 @@ only sign a session actually ended.
 - `[UNVERIFIED]` The Logs page's "Client connections" filter, clicked through a real browser,
   shows the same connect/disconnect/roam events `drawbridge events` does. (Needs a real
   logged-in browser session; see §5.)
-- `[VERIFIED 2026-09-27]` The dashboard's "Total, all clients" line matches the sum of the
+- `[VERIFIED 2026-09-27]` The dashboard's "All Clients" line matches the sum of the
   individual clients' totals: two real clients at 0 and 172,312/137,524 bytes showed
   `↓ 172 KB · ↑ 138 KB`. The host had no browser libraries installed, and a container can't
   reach the host's admin UI (the same isolation §5 checks), so the number was read from a

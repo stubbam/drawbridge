@@ -148,7 +148,7 @@
 		<h2 id="throughput-heading" class="font-semibold">Total Throughput</h2>
 		<RangeSelect id="dashboard-range" bind:value={trafficRange} />
 	</div>
-	<TrafficChart data={traffic} range={trafficShown} title="All Clients" />
+	<TrafficChart data={traffic} range={trafficShown} title="Total Throughput" />
 </section>
 
 <div class="grid gap-6 lg:grid-cols-2">
@@ -199,7 +199,7 @@
 		</div>
 		{#if clients.length > 0}
 			<p class="text-xs text-neutral-500 dark:text-neutral-400">
-				Total, all clients: ↓ {formatBytes(totalReceived)} · ↑ {formatBytes(totalSent)}
+				All Clients: ↓ {formatBytes(totalReceived)} · ↑ {formatBytes(totalSent)}
 			</p>
 		{/if}
 		{#if clients.length === 0}

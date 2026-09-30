@@ -122,7 +122,7 @@ test('the dashboard lists clients and links its tiles to a filtered list', async
 
 	const dashboardList = page.getByRole('list').filter({ hasText: 'laptop' });
 	await expect(dashboardList.getByText('Not connected')).toHaveCount(2);
-	await expect(page.getByText('Total, all clients: ↓ 0 B · ↑ 0 B')).toBeVisible();
+	await expect(page.getByText('All Clients: ↓ 0 B · ↑ 0 B')).toBeVisible();
 
 	// Every row has the same shape. A never-connected client's short total once fit on the
 	// first line, next to a badge that overflowed its box; it belongs on a line of its own,

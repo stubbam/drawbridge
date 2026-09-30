@@ -625,8 +625,8 @@ stateDiagram-v2
     subnet and the LAN's IPv6 /64, detected from the uplink interface), link-local addresses,
     loopback, and the VPN subnets. The LAN is the on-link subnets of the interfaces that carry the
     default routes and hold one of the host's addresses; with no default route, only loopback,
-    link-local, and the VPN are allowed. The allowlist doesn't simply trust "private ranges," because LAN devices
-    often reach the host over the LAN's *global* IPv6 prefix.
+    link-local, and the VPN are allowed. The allowlist doesn't simply trust "private ranges,"
+    because LAN devices often reach the host over the LAN's *global* IPv6 prefix.
   - **In the firewall:** the `input` chain in Drawbridge's nftables table drops traffic to the
     admin port from any other source (§5.3). This protects the UI even if the router's IPv6
     firewall lets inbound traffic through to the host.
@@ -683,8 +683,9 @@ stateDiagram-v2
   hostname (and `.local`), loopback, and the LAN and VPN addresses, and replaces it 30 days before
   it expires. It lasts 800 days, under the 825 days Apple's platforms accept. Its SHA-256
   fingerprint is in the journal and in `drawbridge admin setup-token`, so the admin can check the
-  browser's warning is about this certificate. Users can upload their own certificate (M5). ACME DNS-01 is available in M6;
-  HTTP-01 isn't a good fit because the UI shouldn't be exposed to the internet.
+  browser's warning is about this certificate. Users can upload their own certificate (M5).
+  ACME DNS-01 is available in M6; HTTP-01 isn't a good fit because the UI shouldn't be exposed
+  to the internet.
 - **Retention settings, about/version, and an optional update check.**
 
 ---
@@ -851,8 +852,8 @@ home LAN. The UI is therefore treated as a high-value target:
   2. Generate `secret.key`. (The daemon creates its self-signed TLS certificate on first
      start, in its state directory.)
   3. Install the sysctl and modules-load drop-ins, then apply them. Set `accept_ra=2` where
-     it's needed, before forwarding goes on. If NetworkManager is active, install the drop-in that leaves `wg0` unmanaged
-     (§5.5).
+     it's needed, before forwarding goes on. If NetworkManager is active, install the drop-in
+     that leaves `wg0` unmanaged (§5.5).
   4. Initialize the DB (random ULA prefix, server keypair).
   5. Enable and start both units, then print the URL, the setup token, and the certificate's
      fingerprint, until the admin account exists.
@@ -995,8 +996,8 @@ Each milestone ends in a usable, tested state.
 ### M3: Web UI MVP → **v0.1**
 
 - The setup wizard, login, dashboard, client list and detail, add/edit/pause/delete, download and
-  QR, server settings, DNS settings (public resolvers by default, with a check for a resolver on the host), and live
-  status. *Built. Live status polls every 5 seconds while the page is visible; the SSE stream
+  QR, server settings, DNS settings (public resolvers by default, with a check for a resolver on
+  the host), and live status. *Built. Live status polls every 5 seconds while the page is visible; the SSE stream
   (§8, ADR 0009) arrives with monitoring in M4. The System page (diagnostics, backup, TLS) is
   M5; M3's Account page covers the password and sessions. On real hardware:
   docs/MANUAL_CHECKLIST.md §6.*
@@ -1010,8 +1011,9 @@ Each milestone ends in a usable, tested state.
 
 - The session tracker, events and `client_sessions`, traffic sampling with downsampling and
   retention, charts, the log viewer with filters and CSV export, and journald structured logs.
-  *The session tracker, its three events, and `client_sessions` (session-scoped bytes only) are
-  built (§6.4); traffic history, charts, CSV export, and structured journald fields are not.*
+  *Built: the session tracker, its three events, and `client_sessions`; traffic sampling with
+  rollup and retention, and the dashboard and client-detail charts (§6.4). Not built yet: the log
+  viewer's CSV export, structured journald fields, and the AdGuard Home integration.*
 - AdGuard Home integration: client name sync and the per-client DNS log.
 - **Exit:**
   - Connect, disconnect, and roam events are correct in simulated tests and on real hardware,

@@ -267,10 +267,10 @@
 
 	<section class="card flex flex-col gap-3" aria-labelledby="traffic-heading">
 		<div class="flex flex-wrap items-center justify-between gap-2">
-			<h2 id="traffic-heading" class="font-semibold">Traffic</h2>
+			<h2 id="traffic-heading" class="font-semibold">Total Throughput</h2>
 			<RangeSelect id="client-traffic-range" bind:value={trafficRange} />
 		</div>
-		<TrafficChart data={traffic} range={trafficShown} title={client.name} />
+		<TrafficChart data={traffic} range={trafficShown} label="Total Throughput" />
 	</section>
 
 	<section class="card flex flex-col gap-3" aria-labelledby="sessions-heading">

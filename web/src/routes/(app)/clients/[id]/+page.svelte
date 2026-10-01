@@ -25,7 +25,7 @@
 	} from '$lib/format';
 	import { poll } from '$lib/poll';
 	import { chartRange } from '$lib/range.svelte';
-	import { buildSeriesData, refreshMs, throughputSeries } from '$lib/traffic';
+	import { buildSeriesData, refreshMs, bandwidthSeries } from '$lib/traffic';
 	import CopyButton from '$lib/components/CopyButton.svelte';
 	import DeleteClientModal from '$lib/components/DeleteClientModal.svelte';
 	import NetworkChart from '$lib/components/NetworkChart.svelte';
@@ -40,7 +40,7 @@
 	let traffic = $state<TrafficSeries>();
 	// The range `traffic` holds, which lags the chosen range until the new range's data arrives.
 	let trafficShown = $state<TrafficRange>(chartRange.value);
-	let throughput = $derived(traffic ? buildSeriesData(traffic, trafficShown) : undefined);
+	let bandwidth = $derived(traffic ? buildSeriesData(traffic, trafficShown) : undefined);
 	let sessions = $state<ClientSession[]>([]);
 	let missing = $state(false);
 	let now = $state(Date.now());
@@ -266,22 +266,22 @@
 	<section class="card flex flex-col gap-3" aria-labelledby="traffic-heading">
 		<div class="flex flex-wrap items-start justify-between gap-2">
 			<div>
-				<h2 id="traffic-heading" class="font-semibold">Total Throughput</h2>
+				<h2 id="traffic-heading" class="font-semibold">Bandwidth</h2>
 				<p class="text-sm text-neutral-500 dark:text-neutral-400">Network traffic of this client</p>
 			</div>
 			<RangeSelect id="client-traffic-range" />
 		</div>
 		<NetworkChart
-			x={throughput?.x ?? []}
-			series={throughput ? throughputSeries(throughput, 'rate') : []}
-			domain={throughput?.domain ?? [0, 0]}
-			step={throughput?.step ?? 0}
+			x={bandwidth?.x ?? []}
+			series={bandwidth ? bandwidthSeries(bandwidth, 'rate') : []}
+			domain={bandwidth?.domain ?? [0, 0]}
+			step={bandwidth?.step ?? 0}
 			range={trafficShown}
 			format={formatBitrate}
-			label="Total Throughput"
+			label="Bandwidth"
 			total
 			legend={false}
-			empty={throughput ? 'No traffic in this range' : 'Loading…'}
+			empty={bandwidth ? 'No traffic in this range' : 'Loading…'}
 		/>
 	</section>
 
@@ -293,16 +293,16 @@
 			</p>
 		</div>
 		<NetworkChart
-			x={throughput?.x ?? []}
-			series={throughput ? throughputSeries(throughput, 'cumulative') : []}
-			domain={throughput?.domain ?? [0, 0]}
-			step={throughput?.step ?? 0}
+			x={bandwidth?.x ?? []}
+			series={bandwidth ? bandwidthSeries(bandwidth, 'cumulative') : []}
+			domain={bandwidth?.domain ?? [0, 0]}
+			step={bandwidth?.step ?? 0}
 			range={trafficShown}
 			format={formatBytes}
 			label="Cumulative Traffic"
 			total
 			legend={false}
-			empty={throughput ? 'No traffic in this range' : 'Loading…'}
+			empty={bandwidth ? 'No traffic in this range' : 'Loading…'}
 		/>
 	</section>
 

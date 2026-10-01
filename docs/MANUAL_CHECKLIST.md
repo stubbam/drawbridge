@@ -351,7 +351,7 @@ Settings).
   Received, and Cumulative Sent, stacked at the dashboard chart's width, a line per client that
   moved traffic, a legend, and a tooltip that follows the cursor.
 - `[VERIFIED 2026-09-30]` The 1 minute range draws real traffic, from the polls kept in memory.
-- `[VERIFIED 2026-09-30]` The dashboard's Total Throughput chart, and a client's own page, show
+- `[VERIFIED 2026-09-30]` The dashboard's Bandwidth chart, and a client's own page, show
   Received and Sent as bit rates with a Total in the tooltip, and a client's page adds a Cumulative
   Traffic chart of the same two lines.
 - `[VERIFIED 2026-09-30]` On a client's page, Pause, Rename, and Delete are buttons at the top, and

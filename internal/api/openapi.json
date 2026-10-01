@@ -959,7 +959,7 @@
             "$ref": "#/components/responses/Forbidden"
           },
           "200": {
-            "description": "Every client's samples summed, oldest first, and the window they cover: the dashboard's total throughput.",
+            "description": "Every client's samples summed, oldest first, and the window they cover: the dashboard's bandwidth.",
             "content": {
               "application/json": {
                 "schema": {

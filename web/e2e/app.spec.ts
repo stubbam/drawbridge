@@ -83,16 +83,24 @@ test('clients: add, QR code, download, pause, rename, delete', async ({ page }) 
 	await page.getByRole('button', { name: 'Resume' }).click();
 	await expect(page.getByRole('status')).toHaveText(/^Resumed. The client reconnects/);
 
-	await page.getByLabel('Rename').fill('Pixel');
+	// Rename is a popup, like Add Client.
 	await page.getByRole('button', { name: 'Rename', exact: true }).click();
+	const rename = page.getByRole('dialog', { name: 'Rename Client' });
+	await rename.getByLabel('Name').fill('Pixel');
+	await rename.getByRole('button', { name: 'Rename', exact: true }).click();
 	await expect(page.getByRole('heading', { name: 'Pixel' })).toBeVisible();
+	await expect(page.getByText('Renamed.')).toBeVisible();
 
 	// The CLI sees what the web did, and the log says who did it.
 	expect(cli('client', 'list')).toContain('Pixel');
 	await expect(page.getByText('Viewed the config').first()).toBeVisible();
 
-	await page.getByRole('button', { name: 'Delete this client…' }).click();
+	// Delete asks to confirm in a popup.
 	await page.getByRole('button', { name: 'Delete', exact: true }).click();
+	await page
+		.getByRole('dialog', { name: 'Delete Client' })
+		.getByRole('button', { name: 'Delete', exact: true })
+		.click();
 	await expect(page).toHaveURL(/\/clients$/);
 	await expect(page.getByText('No clients yet')).toBeVisible();
 	expect(problems).toEqual([]);
@@ -285,6 +293,10 @@ test('settings change the server, and the logs show it', async ({ page }) => {
 
 	await navigate(page, 'Logs');
 	await expect(page.getByRole('cell', { name: 'mtu: 1420 → 1380' }).first()).toBeVisible();
+	// Times are on a 24-hour clock, with the date as a day and month: "30 Sep 18:24:05".
+	await expect(page.locator('time').first()).toHaveText(
+		/^\d{1,2} [A-Z][a-z]{2}( \d{4})? \d{2}:\d{2}:\d{2}$/
+	);
 	await page.getByLabel('Show').selectOption('system');
 	await expect(page.getByText('No events.')).toBeVisible();
 	expect(problems).toEqual([]);

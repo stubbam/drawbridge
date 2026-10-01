@@ -860,14 +860,11 @@
             "$ref": "#/components/responses/Forbidden"
           },
           "200": {
-            "description": "Oldest first.",
+            "description": "The client's samples, oldest first, and the window they cover.",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/TrafficSample"
-                  }
+                  "$ref": "#/components/schemas/TrafficSeries"
                 }
               }
             }
@@ -962,14 +959,11 @@
             "$ref": "#/components/responses/Forbidden"
           },
           "200": {
-            "description": "Oldest first, the dashboard's total-throughput aggregate.",
+            "description": "Every client's samples summed, oldest first, and the window they cover: the dashboard's total throughput.",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/TrafficSample"
-                  }
+                  "$ref": "#/components/schemas/TrafficSeries"
                 }
               }
             }
@@ -1736,6 +1730,32 @@
           },
           "send_bytes": {
             "type": "integer"
+          }
+        }
+      },
+      "TrafficSeries": {
+        "type": "object",
+        "required": [
+          "step_seconds",
+          "until",
+          "samples"
+        ],
+        "properties": {
+          "step_seconds": {
+            "type": "number",
+            "description": "How long one sample covers, so a sample's bytes over it is a rate: the poll interval for 1m, the raw interval for 1h, 12h, and 24h, and an hour for the rest."
+          },
+          "until": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Where the history ends. Every sample is complete, and a bucket still filling isn't in it."
+          },
+          "samples": {
+            "type": "array",
+            "description": "Oldest first. A stored bucket in which nothing moved isn't saved, and means zero; a 1m range has a sample at every poll.",
+            "items": {
+              "$ref": "#/components/schemas/TrafficSample"
+            }
           }
         }
       },

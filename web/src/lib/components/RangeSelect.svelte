@@ -1,17 +1,18 @@
 <script lang="ts">
-	import type { TrafficRange } from '$lib/api';
+	import { chartRange, setChartRange } from '$lib/range.svelte';
 	import { rangeLabels, trafficRanges } from '$lib/traffic';
 
-	let { value = $bindable(), id }: { value: TrafficRange; id: string } = $props();
+	let { id }: { id: string } = $props();
 </script>
 
-<div class="flex items-center gap-2">
-	<label class="text-sm whitespace-nowrap text-neutral-500 dark:text-neutral-400" for={id}
-		>Range</label
-	>
-	<select {id} class="input w-auto py-1.5" bind:value>
-		{#each trafficRanges as r (r)}
-			<option value={r}>{rangeLabels[r]}</option>
-		{/each}
-	</select>
-</div>
+<!-- The choice is shared by every chart (range.svelte.ts), so it isn't a prop. -->
+<select
+	{id}
+	aria-label="Range"
+	class="input w-auto py-1.5"
+	bind:value={() => chartRange.value, setChartRange}
+>
+	{#each trafficRanges as r (r)}
+		<option value={r}>{rangeLabels[r]}</option>
+	{/each}
+</select>

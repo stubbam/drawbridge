@@ -396,6 +396,21 @@ func TrafficSamples(ss []store.TrafficSample) []TrafficSampleView {
 	return out
 }
 
+// TrafficSamplesView is one series of traffic history, with the window it covers
+// (GET /api/traffic and GET /api/clients/{id}/traffic, docs/PLAN.md §6.4, §8).
+type TrafficSamplesView struct {
+	// StepSeconds is how long one sample covers; a sample's bytes over it is a rate.
+	StepSeconds float64 `json:"step_seconds"`
+	// Until is where the history ends: every sample is complete and starts before it.
+	Until   time.Time           `json:"until"`
+	Samples []TrafficSampleView `json:"samples"`
+}
+
+// NewTrafficSamples converts the service's samples.
+func NewTrafficSamples(t service.TrafficSamples) TrafficSamplesView {
+	return TrafficSamplesView{StepSeconds: t.Step.Seconds(), Until: t.Until, Samples: TrafficSamples(t.Samples)}
+}
+
 // ClientTrafficView is one client's samples in a TrafficHistoryView.
 type ClientTrafficView struct {
 	ID      string              `json:"id"`

@@ -34,8 +34,9 @@ setups.** What exists:
   from the last two minutes of 5 s polls kept in memory (never written to the database), because
   the stored buckets are a minute wide. A Charts page (the chart-line icon in the header, from
   `GET /api/traffic/clients`) draws Received, Sent, and cumulative charts with a line per
-  client. Also ahead of the rest of M4 (the log viewer's CSV export, structured journald fields,
-  and AdGuard Home sync aren't built yet).
+  client, and the dashboard and a client's page chart the total or the client's own. One range
+  choice covers every chart (`web/src/lib/range.svelte.ts`). Also ahead of the rest of M4 (the log
+  viewer's CSV export, structured journald fields, and AdGuard Home sync aren't built yet).
 - The CLI, which talks to the daemon over the control socket: `server show|set`,
   `client list|add|show|pause|resume|rename|delete|config|qr`, `events`, `doctor`, and
   `admin setup-token|create|reset-password`.
@@ -139,6 +140,9 @@ a step describes.
   - IPv6 that silently doesn't forward.
 
   A test that checks only the DB or the rendered text isn't a test of the effect.
+- **Times in the web UI are on a 24-hour clock, and dates are `9 Sep`.** Use `formatClock`,
+  `formatDay`, `formatTime`, and `formatChartTime` in `web/src/lib/format.ts`, never
+  `toLocaleString` or its relatives, which follow the browser's locale (am and pm, month first).
 - **Formatting:** `gofmt` and `goimports` for Go, and Prettier for the web app. Markdown wraps at
   100 columns.
 

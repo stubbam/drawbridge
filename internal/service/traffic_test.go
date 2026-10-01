@@ -267,13 +267,13 @@ func TestLiveTrafficHasASamplePerPollForAClientAndForTheTotal(t *testing.T) {
 		at     time.Time
 		rx, tx int64
 	}
-	points := func(ss []store.TrafficSample, err error) []point {
+	points := func(ts TrafficSamples, err error) []point {
 		t.Helper()
 		if err != nil {
 			t.Fatal(err)
 		}
 		var out []point
-		for _, sm := range ss {
+		for _, sm := range ts.Samples {
 			out = append(out, point{sm.BucketStart, sm.RxBytes, sm.TxBytes})
 		}
 		return out
@@ -329,7 +329,7 @@ func TestLiveTrafficKeepsOnlyTheRecentPolls(t *testing.T) {
 	p.set(phone, 200, 100)
 	p.tick(70 * time.Second)
 	got, err := s.ClientTraffic(ctx, store.ByName("phone"), ResolutionLive, time.Minute)
-	if err != nil || len(got) != 1 || got[0].RxBytes != 100 || got[0].TxBytes != 50 {
+	if err != nil || len(got.Samples) != 1 || got.Samples[0].RxBytes != 100 || got.Samples[0].TxBytes != 50 {
 		t.Fatalf("1 minute range: %+v, err %v, want only the newest poll (100/50)", got, err)
 	}
 	if n := len(s.live.ticks); n != 3 {
@@ -479,5 +479,84 @@ func TestClientsTrafficStoredEndsAtTheLastSettledBucket(t *testing.T) {
 	if got := h.Series[0].Samples; len(got) != 2 || !got[0].BucketStart.Equal(at(10, 0)) || got[0].RxBytes != 10 ||
 		!got[1].BucketStart.Equal(at(11, 0)) {
 		t.Fatalf("hourly samples %+v", got)
+	}
+}
+
+func TestClientAndTotalTrafficEndAtTheLastSettledBucket(t *testing.T) {
+	s, clk := newTestService(t)
+	ctx := context.Background()
+	for _, name := range []string{"phone", "laptop"} {
+		if _, _, err := s.AddClient(ctx, name); err != nil {
+			t.Fatal(err)
+		}
+	}
+	phone, _ := s.Client(ctx, store.ByName("phone"))
+	laptop, _ := s.Client(ctx, store.ByName("laptop"))
+	clk.t = time.Date(2026, 9, 26, 12, 34, 7, 0, time.UTC)
+	at := func(h, m int) time.Time { return time.Date(2026, 9, 26, h, m, 0, 0, time.UTC) }
+	raw := func(c ClientStatus, h, m int, rx int64) store.TrafficSample {
+		return store.TrafficSample{ClientID: c.ID, Resolution: store.ResolutionRaw, BucketStart: at(h, m), RxBytes: rx, TxBytes: rx}
+	}
+	if err := s.Store.InsertTraffic(ctx, []store.TrafficSample{
+		raw(phone, 12, 31, 1), raw(laptop, 12, 31, 10),
+		raw(phone, 12, 32, 2), raw(laptop, 12, 32, 20),
+		raw(phone, 12, 33, 4), raw(laptop, 12, 33, 40), // the minute that ended seven seconds ago
+		raw(phone, 11, 10, 100), // an earlier hour
+	}); err != nil {
+		t.Fatal(err)
+	}
+	rx := func(ss []store.TrafficSample) []int64 {
+		var out []int64
+		for _, sm := range ss {
+			out = append(out, sm.RxBytes)
+		}
+		return out
+	}
+	same := func(got, want []int64) bool {
+		if len(got) != len(want) {
+			return false
+		}
+		for i := range got {
+			if got[i] != want[i] {
+				return false
+			}
+		}
+		return true
+	}
+
+	// The 12:33 bucket may not be saved yet, so a day's history ends at 12:33 and leaves it out.
+	one, err := s.ClientTraffic(ctx, store.ByName("phone"), store.ResolutionRaw, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if one.Step != time.Minute || !one.Until.Equal(at(12, 33)) || !same(rx(one.Samples), []int64{1, 2}) {
+		t.Fatalf("client: step %v until %v samples %v, want 1m, 12:33, [1 2]", one.Step, one.Until, rx(one.Samples))
+	}
+	all, err := s.TotalTraffic(ctx, store.ResolutionRaw, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if all.Step != time.Minute || !all.Until.Equal(at(12, 33)) || !same(rx(all.Samples), []int64{11, 22}) {
+		t.Fatalf("total: step %v until %v samples %v, want 1m, 12:33, [11 22]", all.Step, all.Until, rx(all.Samples))
+	}
+
+	// Ten seconds on, the bucket is in.
+	clk.advance(10 * time.Second)
+	if all, err = s.TotalTraffic(ctx, store.ResolutionRaw, time.Hour); err != nil || !same(rx(all.Samples), []int64{11, 22, 44}) {
+		t.Fatalf("after the margin: %v, err %v, want [11 22 44]", rx(all.Samples), err)
+	}
+
+	// The hourly rollup ends at the last whole hour: 11:00's rows are in, 12:00's partial hour
+	// isn't, and a sample is an hour wide.
+	one, err = s.ClientTraffic(ctx, store.ByName("phone"), store.ResolutionHourly, 7*24*time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if one.Step != time.Hour || !one.Until.Equal(at(12, 0)) || !same(rx(one.Samples), []int64{100}) {
+		t.Fatalf("hourly client: step %v until %v samples %v, want 1h, 12:00, [100]", one.Step, one.Until, rx(one.Samples))
+	}
+	all, err = s.TotalTraffic(ctx, store.ResolutionHourly, 7*24*time.Hour)
+	if err != nil || !same(rx(all.Samples), []int64{100}) {
+		t.Fatalf("hourly total: %v, err %v, want [100]", rx(all.Samples), err)
 	}
 }

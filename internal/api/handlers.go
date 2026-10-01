@@ -291,7 +291,7 @@ func (h *handler) clientTraffic(w http.ResponseWriter, r *http.Request) {
 		h.fail(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, views.TrafficSamples(samples))
+	writeJSON(w, http.StatusOK, views.NewTrafficSamples(samples))
 }
 
 func (h *handler) clientsTraffic(w http.ResponseWriter, r *http.Request) {
@@ -319,7 +319,7 @@ func (h *handler) totalTraffic(w http.ResponseWriter, r *http.Request) {
 		h.fail(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, views.TrafficSamples(samples))
+	writeJSON(w, http.StatusOK, views.NewTrafficSamples(samples))
 }
 
 func (h *handler) clientSessions(w http.ResponseWriter, r *http.Request) {

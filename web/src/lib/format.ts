@@ -51,18 +51,33 @@ export function formatBitrate(bps: number): string {
 	return `${Number(bps.toPrecision(3))} ${units[i]}`;
 }
 
+const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const pad = (n: number) => String(n).padStart(2, '0');
+
 /**
- * Formats a chart's timestamp (seconds since the epoch) in the browser's time zone: "Sep 30,
- * 6:24 PM", or with seconds when `seconds` is set, for samples a few seconds wide.
+ * A time of day on a 24-hour clock, in the browser's time zone: "18:24", or "18:24:05" with
+ * seconds. Never am or pm.
+ */
+export function formatClock(d: Date, seconds = false): string {
+	const hm = `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+	return seconds ? `${hm}:${pad(d.getSeconds())}` : hm;
+}
+
+/**
+ * A date as the day and the month's English abbreviation: "9 Sep", or "9 Sep 2026" with the year.
+ * Written out, not the browser's locale format, so every browser says it the same way.
+ */
+export function formatDay(d: Date, year = false): string {
+	return `${d.getDate()} ${months[d.getMonth()]}${year ? ` ${d.getFullYear()}` : ''}`;
+}
+
+/**
+ * Formats a chart's timestamp (seconds since the epoch) for its tooltip: "30 Sep at 18:24", or
+ * with seconds when `seconds` is set, for samples a few seconds wide.
  */
 export function formatChartTime(sec: number, seconds = false): string {
-	return new Date(sec * 1000).toLocaleString(undefined, {
-		month: 'short',
-		day: 'numeric',
-		hour: 'numeric',
-		minute: '2-digit',
-		second: seconds ? '2-digit' : undefined
-	});
+	const d = new Date(sec * 1000);
+	return `${formatDay(d)} at ${formatClock(d, seconds)}`;
 }
 
 /** Formats how long ago a time was: "just now", "42 s ago", "5 min ago", "3 h ago", "2 d ago". */
@@ -89,9 +104,14 @@ export function endpointAddress(endpoint: string): string {
 	return colon > 0 ? endpoint.slice(0, colon) : endpoint;
 }
 
-/** Formats a time in the browser's time zone. */
-export function formatTime(iso: string): string {
-	return new Date(iso).toLocaleString();
+/**
+ * Formats a time for a list or a log, in the browser's time zone: "30 Sep 18:24:05". The year
+ * is added when it isn't the current one, so an old entry doesn't read as this year's.
+ */
+export function formatTime(iso: string, now: Date = new Date()): string {
+	const d = new Date(iso);
+	if (Number.isNaN(d.getTime())) return iso;
+	return `${formatDay(d, d.getFullYear() !== now.getFullYear())} ${formatClock(d, true)}`;
 }
 
 const eventLabels: Record<string, string> = {

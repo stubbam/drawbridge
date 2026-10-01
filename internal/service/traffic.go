@@ -253,28 +253,94 @@ func (s *Service) TrafficRetention(ctx context.Context) {
 	}
 }
 
-// ClientTraffic returns one client's traffic history at resolution (a store resolution, or
-// ResolutionLive), looking back lookback from now.
-func (s *Service) ClientTraffic(ctx context.Context, ref store.Ref, resolution string, lookback time.Duration) ([]store.TrafficSample, error) {
-	c, err := s.Store.Client(ctx, ref)
-	if err != nil {
-		return nil, err
-	}
-	since := s.now().Add(-lookback)
-	if resolution == ResolutionLive {
-		return s.live.samples(c.ID, since), nil
-	}
-	return s.Store.ClientTraffic(ctx, c.ID, resolution, since)
+// trafficWindow is the span a chart range covers. Every history (one client's, the total, and
+// every client's) is cut to one so the charts agree on where the data ends.
+type trafficWindow struct {
+	// step is how long one sample covers: the poll interval for live samples, the raw interval
+	// for stored ones, and an hour for the hourly rollup. Dividing a sample's bytes by it gives a
+	// rate.
+	step time.Duration
+	// since and until bound the samples: [since, until) for stored ones, and every poll from
+	// since on for live ones.
+	since, until time.Time
+	live         bool
 }
 
-// TotalTraffic is the same as ClientTraffic, summed across every client — the
-// dashboard's all-clients aggregate.
-func (s *Service) TotalTraffic(ctx context.Context, resolution string, lookback time.Duration) ([]store.TrafficSample, error) {
-	since := s.now().Add(-lookback)
+// trafficWindow returns the window for resolution (a store resolution, or ResolutionLive) and
+// lookback. Until is the last complete sample: a stored bucket is left out until it has ended and
+// the poll after it has saved it, so the chart never mistakes a bucket that's still filling, or
+// isn't saved yet, for one in which nothing moved. A live poll is complete as soon as it's taken.
+func (s *Service) trafficWindow(resolution string, lookback time.Duration) trafficWindow {
+	now := s.now().UTC()
 	if resolution == ResolutionLive {
-		return s.live.samples("", since), nil
+		until := now.Truncate(time.Second)
+		return trafficWindow{step: s.trackInterval(), since: until.Add(-lookback), until: until, live: true}
 	}
-	return s.Store.TotalTraffic(ctx, resolution, since)
+	step := s.trafficRawInterval()
+	if resolution == store.ResolutionHourly {
+		step = time.Hour
+	}
+	// A bucket is saved by the first poll after it ends, so give that poll two intervals.
+	until := now.Add(-2 * s.trackInterval()).Truncate(step)
+	return trafficWindow{step: step, since: until.Add(-lookback), until: until}
+}
+
+// TrafficSamples is one series of traffic history, with the window it covers: one client's, or
+// every client's summed.
+type TrafficSamples struct {
+	// Step is how long one sample covers, so a sample's bytes over it is a rate.
+	Step time.Duration
+	// Until is where the history ends: every sample is complete and starts before it.
+	Until time.Time
+	// Samples are oldest first. A stored bucket in which nothing moved isn't saved, and means
+	// zero; a live series has a sample at every poll.
+	Samples []store.TrafficSample
+}
+
+// settle drops the samples that aren't complete: the stored buckets at or after until.
+func (w trafficWindow) settle(ss []store.TrafficSample) TrafficSamples {
+	out := TrafficSamples{Step: w.step, Until: w.until, Samples: ss}
+	if w.live {
+		return out
+	}
+	n := len(ss)
+	for n > 0 && !ss[n-1].BucketStart.Before(w.until) {
+		n--
+	}
+	out.Samples = ss[:n]
+	return out
+}
+
+// ClientTraffic returns one client's traffic history at resolution (a store resolution, or
+// ResolutionLive), looking back lookback from the last complete sample.
+func (s *Service) ClientTraffic(ctx context.Context, ref store.Ref, resolution string, lookback time.Duration) (TrafficSamples, error) {
+	c, err := s.Store.Client(ctx, ref)
+	if err != nil {
+		return TrafficSamples{}, err
+	}
+	w := s.trafficWindow(resolution, lookback)
+	if w.live {
+		return w.settle(s.live.samples(c.ID, w.since)), nil
+	}
+	ss, err := s.Store.ClientTraffic(ctx, c.ID, resolution, w.since)
+	if err != nil {
+		return TrafficSamples{}, err
+	}
+	return w.settle(ss), nil
+}
+
+// TotalTraffic is the same as ClientTraffic, summed across every client: the dashboard's
+// all-clients aggregate.
+func (s *Service) TotalTraffic(ctx context.Context, resolution string, lookback time.Duration) (TrafficSamples, error) {
+	w := s.trafficWindow(resolution, lookback)
+	if w.live {
+		return w.settle(s.live.samples("", w.since)), nil
+	}
+	ss, err := s.Store.TotalTraffic(ctx, resolution, w.since)
+	if err != nil {
+		return TrafficSamples{}, err
+	}
+	return w.settle(ss), nil
 }
 
 // TrafficSeries is one client's samples in a TrafficHistory.
@@ -285,17 +351,11 @@ type TrafficSeries struct {
 
 // TrafficHistory is every client's traffic over one chart range, for the charts page.
 type TrafficHistory struct {
-	// Step is how long one sample covers: the poll interval for live samples, the raw interval
-	// for stored ones, and an hour for the hourly rollup. Dividing a sample's bytes by it gives
-	// a rate.
-	Step time.Duration
-	// Until is where the history ends. Every sample is complete: a stored bucket is left out
-	// until it has ended and the poll after it has flushed it, so the chart never mistakes a
-	// bucket that's still filling, or isn't saved yet, for one in which nothing moved. Live
-	// samples are the exception to "stored": a poll is complete as soon as it's taken.
+	// Step and Until are as in TrafficSamples.
+	Step  time.Duration
 	Until time.Time
-	// Series has every client, by name. A stored client's samples are sparse (a bucket in which
-	// it moved nothing isn't saved, and means zero); a live client has one at every poll.
+	// Series has every client, by name. A stored client's samples are sparse; a live client has
+	// one at every poll.
 	Series []TrafficSeries
 }
 
@@ -313,29 +373,18 @@ func (s *Service) ClientsTraffic(ctx context.Context, resolution string, lookbac
 		}
 		return clients[i].ID < clients[j].ID
 	})
-	now := s.now().UTC()
-	h := TrafficHistory{}
+	w := s.trafficWindow(resolution, lookback)
 	var by map[string][]store.TrafficSample
-	if resolution == ResolutionLive {
-		h.Step = s.trackInterval()
-		h.Until = now.Truncate(time.Second)
+	if w.live {
 		ids := make([]string, len(clients))
 		for i, c := range clients {
 			ids[i] = c.ID
 		}
-		by = s.live.byClient(ids, h.Until.Add(-lookback))
-	} else {
-		h.Step = s.trafficRawInterval()
-		if resolution == store.ResolutionHourly {
-			h.Step = time.Hour
-		}
-		// A bucket is saved by the first poll after it ends, so give that poll two intervals.
-		h.Until = now.Add(-2 * s.trackInterval()).Truncate(h.Step)
-		by, err = s.Store.ClientsTraffic(ctx, resolution, h.Until.Add(-lookback), h.Until)
-		if err != nil {
-			return TrafficHistory{}, err
-		}
+		by = s.live.byClient(ids, w.since)
+	} else if by, err = s.Store.ClientsTraffic(ctx, resolution, w.since, w.until); err != nil {
+		return TrafficHistory{}, err
 	}
+	h := TrafficHistory{Step: w.step, Until: w.until}
 	for _, c := range clients {
 		h.Series = append(h.Series, TrafficSeries{Client: c, Samples: by[c.ID]})
 	}

@@ -1,52 +1,21 @@
 import { describe, expect, it } from 'vitest';
-import type { TrafficHistory } from './api';
+import type { TrafficHistory, TrafficSeries } from './api';
 import {
 	buildChartData,
+	buildSeriesData,
 	chartSeries,
 	clientColor,
 	displayStep,
 	rangeLabels,
+	rangeSeconds,
+	receivedColor,
 	refreshMs,
+	sentColor,
+	throughputSeries,
 	toCumulative,
 	toRates,
-	toUplotData,
-	trafficRanges,
-	xRange
+	trafficRanges
 } from './traffic';
-
-describe('toUplotData', () => {
-	it('converts samples into aligned timestamp/rx/tx arrays', () => {
-		const [x, rx, tx] = toUplotData([
-			{ bucket_start: '2026-09-28T10:00:00Z', receive_bytes: 100, send_bytes: 50 },
-			{ bucket_start: '2026-09-28T10:01:00Z', receive_bytes: 200, send_bytes: 75 }
-		]);
-		expect(x).toEqual([
-			Date.parse('2026-09-28T10:00:00Z') / 1000,
-			Date.parse('2026-09-28T10:01:00Z') / 1000
-		]);
-		expect(rx).toEqual([100, 200]);
-		expect(tx).toEqual([50, 75]);
-	});
-
-	it('returns empty arrays for no data', () => {
-		expect(toUplotData([])).toEqual([[], [], []]);
-	});
-});
-
-describe('xRange', () => {
-	const now = Date.parse('2026-09-29T12:00:00.500Z');
-	const end = Date.parse('2026-09-29T12:00:00Z') / 1000;
-
-	it('spans the whole window ending now, whatever the data covers', () => {
-		expect(xRange('1m', now)).toEqual([end - 60, end]);
-		expect(xRange('1h', now)).toEqual([end - 3600, end]);
-		expect(xRange('12h', now)).toEqual([end - 12 * 3600, end]);
-		expect(xRange('24h', now)).toEqual([end - 86400, end]);
-		expect(xRange('7d', now)).toEqual([end - 7 * 86400, end]);
-		expect(xRange('30d', now)).toEqual([end - 30 * 86400, end]);
-		expect(xRange('90d', now)).toEqual([end - 90 * 86400, end]);
-	});
-});
 
 describe('trafficRanges', () => {
 	it('lists every range shortest first, each with a label', () => {
@@ -59,11 +28,8 @@ describe('trafficRanges', () => {
 			'30 Days',
 			'90 Days'
 		]);
-		const spans = trafficRanges.map((r) => {
-			const [start, end] = xRange(r, 0);
-			return end - start;
-		});
-		expect(spans).toEqual([...spans].sort((a, b) => a - b));
+		const spans = trafficRanges.map((r) => rangeSeconds[r]);
+		expect(spans).toEqual([60, 3600, 12 * 3600, 86400, 7 * 86400, 30 * 86400, 90 * 86400]);
 	});
 });
 
@@ -293,5 +259,96 @@ describe('displayStep', () => {
 		expect(displayStep(900, 3600)).toBe(900);
 		// Nonsense from the server doesn't divide by zero.
 		expect(displayStep(0, 86400)).toBe(600);
+	});
+});
+
+describe('buildSeriesData', () => {
+	const until = '2026-09-29T12:00:00Z';
+	const at = (iso: string) => Date.parse(iso) / 1000;
+	const sample = (bucket_start: string, receive_bytes: number, send_bytes: number) => ({
+		bucket_start,
+		receive_bytes,
+		send_bytes
+	});
+
+	it('averages a series onto the same points as the per-client charts', () => {
+		const w: TrafficSeries = {
+			step_seconds: 60,
+			until,
+			samples: [
+				sample('2026-09-29T11:41:00Z', 300_000, 600_000),
+				sample('2026-09-29T11:49:00Z', 300_000, 600_000),
+				sample('2026-09-29T11:50:00Z', 0, 300_000)
+			]
+		};
+		const d = buildSeriesData(w, '24h');
+		expect(d.step).toBe(600);
+		expect(d.x.length).toBe(144);
+		expect(d.domain).toEqual([at(until) - 86400, at(until)]);
+		const first = d.x.indexOf(at('2026-09-29T11:40:00Z'));
+		// The server received 600 KB and sent 1.2 MB in that ten minutes; it's all the series has.
+		expect(d.received[first]).toBe(600_000);
+		expect(d.sent[first]).toBe(1_200_000);
+		expect(d.sent[first + 1]).toBe(300_000);
+		expect(d.received.reduce((a, b) => a + b)).toBe(600_000);
+		expect(d.sent.reduce((a, b) => a + b)).toBe(1_500_000);
+	});
+
+	it('keeps the polls themselves as the points of a 1m series', () => {
+		const w: TrafficSeries = {
+			step_seconds: 5,
+			until: '2026-09-29T12:00:10Z',
+			samples: [
+				sample('2026-09-29T11:58:00Z', 1, 1), // before the minute
+				sample('2026-09-29T12:00:00Z', 0, 0),
+				sample('2026-09-29T12:00:04Z', 10, 0),
+				sample('2026-09-29T12:00:09Z', 0, 20)
+			]
+		};
+		const d = buildSeriesData(w, '1m');
+		expect(d.x).toEqual([
+			at('2026-09-29T12:00:00Z'),
+			at('2026-09-29T12:00:04Z'),
+			at('2026-09-29T12:00:09Z')
+		]);
+		expect(d.step).toBe(5);
+		expect(d.received).toEqual([0, 10, 0]);
+		expect(d.sent).toEqual([0, 0, 20]);
+	});
+
+	it('is empty-but-laid-out with no samples', () => {
+		const d = buildSeriesData({ step_seconds: 3600, until, samples: [] }, '7d');
+		expect(d.x.length).toBe(84);
+		expect(d.received.every((v) => v === 0)).toBe(true);
+		expect(throughputSeries(d, 'rate')).toEqual([]);
+	});
+});
+
+describe('throughputSeries', () => {
+	const data = {
+		x: [0, 600, 1200],
+		domain: [0, 1800] as [number, number],
+		step: 600,
+		received: [0, 75_000, 0],
+		sent: [150_000, 0, 75_000]
+	};
+
+	it('has a received line and a sent line, as rates', () => {
+		const [received, sent] = throughputSeries(data, 'rate');
+		expect(received).toMatchObject({ id: 'received', name: 'Received', color: receivedColor });
+		expect(sent).toMatchObject({ id: 'sent', name: 'Sent', color: sentColor });
+		// 75 KB over ten minutes is 1 Kbps, and 150 KB is 2 Kbps.
+		expect(received.values).toEqual([0, 1000, 0]);
+		expect(sent.values).toEqual([2000, 0, 1000]);
+	});
+
+	it('has them as running totals too', () => {
+		const [received, sent] = throughputSeries(data, 'cumulative');
+		expect(received.values).toEqual([0, 75_000, 75_000]);
+		expect(sent.values).toEqual([150_000, 150_000, 225_000]);
+	});
+
+	it('draws nothing when nothing moved', () => {
+		expect(throughputSeries({ ...data, received: [0, 0, 0], sent: [0, 0, 0] }, 'rate')).toEqual([]);
 	});
 });

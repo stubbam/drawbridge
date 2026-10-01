@@ -17,7 +17,8 @@ It supports both IPv4 and IPv6. wg-easy is the feature reference; none of its co
 **Status: M0–M3 are built, the session tracker and traffic history from M4 shipped ahead of
 the rest of it (2026-09-26–28), and `drawbridge doctor` from M5 followed (2026-09-29). Nearly
 every check in docs/MANUAL_CHECKLIST.md has passed on the reference platform (a Raspberry Pi 5
-running Debian 13); what's left there needs a laptop or a second Tailscale device.
+running Debian 13); what's left there needs a laptop, a second Tailscale device, or a few days of
+traffic history.
 docs/REQUIREMENTS.md lists what a host and network need, and the known roadblocks on other
 setups.** What exists:
 

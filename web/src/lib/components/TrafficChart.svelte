@@ -2,6 +2,7 @@
 	import uPlot from 'uplot';
 	import 'uplot/dist/uPlot.min.css';
 	import type { TrafficRange, TrafficSample } from '$lib/api';
+	import { axisSize } from '$lib/chart';
 	import { formatBytes } from '$lib/format';
 	import { toUplotData, xRange } from '$lib/traffic';
 
@@ -31,23 +32,6 @@
 			send: dark ? '#34d399' : '#059669'
 		};
 	}
-
-	// uPlot's default y-axis width is a fixed 50px, too narrow for a formatted byte string
-	// like "150 MB" or "1.5 GB" — it doesn't wrap or shrink the text, so it just clips.
-	// This is uPlot's own documented recipe for sizing an axis to its longest label
-	// instead: measure it with the axis's own font, so it always fits.
-	const axisSize: uPlot.Axis.Size = (self, values, axisIdx) => {
-		const axis = self.axes[axisIdx];
-		let size = (axis.ticks?.size ?? 0) + (axis.gap ?? 0);
-		const longest = (values ?? []).reduce((a, b) => (b.length > a.length ? b : a), '');
-		if (longest && axis.font) {
-			self.ctx.save();
-			self.ctx.font = axis.font[0];
-			size += self.ctx.measureText(longest).width / devicePixelRatio;
-			self.ctx.restore();
-		}
-		return Math.ceil(size);
-	};
 
 	function build() {
 		if (!container) return;

@@ -58,7 +58,7 @@
 {/snippet}
 
 <header class="border-b border-neutral-200 bg-white dark:border-neutral-800 dark:bg-neutral-900">
-	<div class="mx-auto flex max-w-5xl items-center gap-x-6 px-4 py-3">
+	<div class="mx-auto flex max-w-5xl flex-wrap items-center gap-x-6 gap-y-1 px-4 py-3">
 		<a href={resolve('/')} class="text-2xl font-semibold tracking-tight">Drawbridge</a>
 		<nav class="ml-auto flex items-center gap-1" aria-label="Main">
 			<a
@@ -83,6 +83,28 @@
 					/>
 				</svg>
 				{@render tooltip('Clients')}
+			</a>
+			<a
+				href={resolve('/charts')}
+				class="group relative flex items-center rounded-md p-2 {current(resolve('/charts'))
+					? 'text-neutral-900 dark:text-white'
+					: 'text-neutral-500 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-white'}"
+				aria-label="Charts"
+			>
+				<svg
+					class="size-4"
+					viewBox="0 0 24 24"
+					fill="none"
+					stroke="currentColor"
+					stroke-width="2"
+					stroke-linecap="round"
+					stroke-linejoin="round"
+					aria-hidden="true"
+				>
+					<path d="M3 3v16a2 2 0 0 0 2 2h16" />
+					<path d="m19 9-5 5-4-4-3 3" />
+				</svg>
+				{@render tooltip('Charts')}
 			</a>
 			<a
 				href={resolve('/settings')}

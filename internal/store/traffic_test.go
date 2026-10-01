@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 )
@@ -225,5 +226,87 @@ func TestMigrationAddsTrafficToAnExistingDatabase(t *testing.T) {
 	}
 	if got, err := again.ClientTraffic(ctx, c.ID, ResolutionRaw, time.Unix(0, 0)); err != nil || len(got) != 0 {
 		t.Fatalf("traffic %v, err %v, want none", got, err)
+	}
+}
+
+// clientsTrafficPoints flattens ClientsTraffic's samples to "rx/tx" at an offset from base, so a
+// test reads as a table.
+func clientsTrafficPoints(t *testing.T, got map[string][]TrafficSample, id string, base time.Time) []string {
+	t.Helper()
+	var out []string
+	for _, sm := range got[id] {
+		out = append(out, fmt.Sprintf("%v %d/%d", sm.BucketStart.Sub(base), sm.RxBytes, sm.TxBytes))
+	}
+	return out
+}
+
+func TestClientsTrafficGroupsByClientAndBoundsTheRange(t *testing.T) {
+	ctx := context.Background()
+	s := initialized(t)
+	a, b := mustClient(t, s, "alpha"), mustClient(t, s, "beta")
+	t0 := time.Date(2026, 9, 28, 10, 0, 0, 0, time.UTC)
+	err := s.InsertTraffic(ctx, []TrafficSample{
+		{ClientID: a, Resolution: ResolutionRaw, BucketStart: t0, RxBytes: 100, TxBytes: 50},
+		{ClientID: a, Resolution: ResolutionRaw, BucketStart: t0.Add(time.Minute), RxBytes: 200, TxBytes: 75},
+		{ClientID: a, Resolution: ResolutionRaw, BucketStart: t0.Add(2 * time.Minute), RxBytes: 300, TxBytes: 90},
+		{ClientID: b, Resolution: ResolutionRaw, BucketStart: t0.Add(time.Minute), RxBytes: 7, TxBytes: 3},
+		{ClientID: b, Resolution: ResolutionHourly, BucketStart: t0, RxBytes: 999, TxBytes: 999},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// [t0+1m, t0+2m): the start is in, the end is out, and another resolution never shows.
+	got, err := s.ClientsTraffic(ctx, ResolutionRaw, t0.Add(time.Minute), t0.Add(2*time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pts := clientsTrafficPoints(t, got, a, t0); len(pts) != 1 || pts[0] != "1m0s 200/75" {
+		t.Fatalf("alpha %v", pts)
+	}
+	if pts := clientsTrafficPoints(t, got, b, t0); len(pts) != 1 || pts[0] != "1m0s 7/3" {
+		t.Fatalf("beta %v", pts)
+	}
+
+	// Oldest first, and a client with nothing in range isn't in the map.
+	got, err = s.ClientsTraffic(ctx, ResolutionRaw, t0, t0.Add(3*time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pts := clientsTrafficPoints(t, got, a, t0); len(pts) != 3 || pts[0] != "0s 100/50" || pts[2] != "2m0s 300/90" {
+		t.Fatalf("alpha %v", pts)
+	}
+	got, err = s.ClientsTraffic(ctx, ResolutionRaw, t0.Add(10*time.Minute), t0.Add(20*time.Minute))
+	if err != nil || len(got) != 0 {
+		t.Fatalf("empty range: %v, err %v", got, err)
+	}
+}
+
+func TestClientsTrafficHourlyFoldsInRawRowsOnce(t *testing.T) {
+	ctx := context.Background()
+	s := initialized(t)
+	a := mustClient(t, s, "alpha")
+	h0 := time.Date(2026, 9, 28, 10, 0, 0, 0, time.UTC)
+	err := s.InsertTraffic(ctx, []TrafficSample{
+		// An hour that's been rolled up, whose raw rows aren't pruned yet: counted once.
+		{ClientID: a, Resolution: ResolutionHourly, BucketStart: h0, RxBytes: 500, TxBytes: 200},
+		{ClientID: a, Resolution: ResolutionRaw, BucketStart: h0.Add(5 * time.Minute), RxBytes: 300, TxBytes: 100},
+		{ClientID: a, Resolution: ResolutionRaw, BucketStart: h0.Add(6 * time.Minute), RxBytes: 200, TxBytes: 100},
+		// An hour that hasn't: its raw rows sum into one bucket.
+		{ClientID: a, Resolution: ResolutionRaw, BucketStart: h0.Add(time.Hour + 5*time.Minute), RxBytes: 10, TxBytes: 1},
+		{ClientID: a, Resolution: ResolutionRaw, BucketStart: h0.Add(time.Hour + 6*time.Minute), RxBytes: 20, TxBytes: 2},
+		// Past the end of the range.
+		{ClientID: a, Resolution: ResolutionRaw, BucketStart: h0.Add(2*time.Hour + 5*time.Minute), RxBytes: 99, TxBytes: 9},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.ClientsTraffic(ctx, ResolutionHourly, h0, h0.Add(2*time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	pts := clientsTrafficPoints(t, got, a, h0)
+	if len(pts) != 2 || pts[0] != "0s 500/200" || pts[1] != "1h0m0s 30/3" {
+		t.Fatalf("hourly %v, want the rolled-up hour (500/200) and the folded one (30/3)", pts)
 	}
 }

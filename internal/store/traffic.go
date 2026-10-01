@@ -111,6 +111,53 @@ func (s *Store) TotalTraffic(ctx context.Context, resolution string, since time.
 		GROUP BY bucket_start ORDER BY bucket_start`, "", formatTime(since))
 }
 
+// ClientsTraffic returns every client's samples at resolution for the buckets starting in
+// [since, until), grouped by client ID, each client's oldest first; a client with none isn't in
+// the map. At "hourly" it folds in "raw" rows that haven't been rolled up yet, exactly as
+// ClientTraffic does, so both bounds should lie on an hour boundary: a raw row's hour is judged
+// by its own start, and an hour only partly inside the range would come back short.
+func (s *Store) ClientsTraffic(ctx context.Context, resolution string, since, until time.Time) (map[string][]TrafficSample, error) {
+	query := `SELECT client_id, bucket_start, rx_bytes, tx_bytes FROM traffic
+		WHERE resolution = ?1 AND bucket_start >= ?2 AND bucket_start < ?3
+		ORDER BY client_id, bucket_start`
+	args := []any{resolution, formatTime(since), formatTime(until)}
+	if resolution == ResolutionHourly {
+		query = `
+			SELECT client_id, bucket_start, SUM(rx_bytes), SUM(tx_bytes) FROM (
+				SELECT client_id, bucket_start, rx_bytes, tx_bytes FROM traffic
+				WHERE resolution = 'hourly' AND bucket_start >= ?1 AND bucket_start < ?2
+				UNION ALL
+				SELECT client_id, ` + hourBucketOfT + ` AS bucket_start, rx_bytes, tx_bytes FROM traffic t
+				WHERE resolution = 'raw' AND bucket_start >= ?1 AND bucket_start < ?2
+					AND NOT EXISTS (SELECT 1 FROM traffic h WHERE h.client_id = t.client_id
+						AND h.resolution = 'hourly' AND h.bucket_start = ` + hourBucketOfT + `)
+			)
+			GROUP BY client_id, bucket_start ORDER BY client_id, bucket_start`
+		args = args[1:]
+	}
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string][]TrafficSample{}
+	for rows.Next() {
+		var (
+			id, ts string
+			rx, tx int64
+		)
+		if err := rows.Scan(&id, &ts, &rx, &tx); err != nil {
+			return nil, err
+		}
+		bucket, err := time.Parse(timeFormat, ts)
+		if err != nil {
+			return nil, fmt.Errorf("traffic bucket %q: %w", ts, err)
+		}
+		out[id] = append(out[id], TrafficSample{ClientID: id, BucketStart: bucket, RxBytes: rx, TxBytes: tx})
+	}
+	return out, rows.Err()
+}
+
 // queryTraffic runs a (bucket_start, rx_bytes, tx_bytes) query and fills in clientID on
 // every row (the aggregate queries don't select it, since they sum across resolutions or
 // clients).

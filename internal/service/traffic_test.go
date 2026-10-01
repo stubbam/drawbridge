@@ -365,3 +365,119 @@ func TestLiveTrafficIsSafeToReadWhileThePollerWrites(t *testing.T) {
 		}
 	}
 }
+
+func TestClientsTrafficLiveHasEveryClientAtEveryPoll(t *testing.T) {
+	s, clk := newTestService(t)
+	ctx := context.Background()
+	for _, name := range []string{"zed", "Alpha"} {
+		if _, _, err := s.AddClient(ctx, name); err != nil {
+			t.Fatal(err)
+		}
+	}
+	zed, _ := s.Client(ctx, store.ByName("zed"))
+	alpha, _ := s.Client(ctx, store.ByName("Alpha"))
+	p := livePeers{s: s, clk: clk, ctx: ctx, fake: s.WG.(*wg.Fake)}
+
+	p.set(zed, 0, 0)
+	p.set(alpha, 0, 0)
+	p.tick(0)
+	p.set(zed, 100, 40)
+	p.tick(5 * time.Second)
+	p.set(alpha, 10, 5)
+	p.tick(5 * time.Second)
+
+	h, err := s.ClientsTraffic(ctx, ResolutionLive, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if h.Step != DefaultTrackInterval || !h.Until.Equal(clk.t) {
+		t.Fatalf("step %v until %v, want %v and %v", h.Step, h.Until, DefaultTrackInterval, clk.t)
+	}
+	if len(h.Series) != 2 || h.Series[0].Client.Name != "Alpha" || h.Series[1].Client.Name != "zed" {
+		t.Fatalf("series %+v, want Alpha then zed (by name, ignoring case)", h.Series)
+	}
+	rxtx := func(sr TrafficSeries) [][2]int64 {
+		var out [][2]int64
+		for _, sm := range sr.Samples {
+			out = append(out, [2]int64{sm.RxBytes, sm.TxBytes})
+		}
+		return out
+	}
+	// Both clients have a sample at all three polls, zero where nothing moved.
+	if got := rxtx(h.Series[0]); len(got) != 3 || got[0] != [2]int64{} || got[1] != [2]int64{} || got[2] != [2]int64{10, 5} {
+		t.Fatalf("Alpha %v", got)
+	}
+	if got := rxtx(h.Series[1]); len(got) != 3 || got[0] != [2]int64{} || got[1] != [2]int64{100, 40} || got[2] != [2]int64{} {
+		t.Fatalf("zed %v", got)
+	}
+	for i := range h.Series[0].Samples {
+		if !h.Series[0].Samples[i].BucketStart.Equal(h.Series[1].Samples[i].BucketStart) {
+			t.Fatalf("poll %d is at different times for the two clients", i)
+		}
+	}
+
+	// The poll interval is a setting, and it sets the step.
+	s.TrackInterval = 2 * time.Second
+	if h, err = s.ClientsTraffic(ctx, ResolutionLive, time.Minute); err != nil || h.Step != 2*time.Second {
+		t.Fatalf("step %v, err %v, want 2s", h.Step, err)
+	}
+}
+
+func TestClientsTrafficStoredEndsAtTheLastSettledBucket(t *testing.T) {
+	s, clk := newTestService(t)
+	ctx := context.Background()
+	if _, _, err := s.AddClient(ctx, "phone"); err != nil {
+		t.Fatal(err)
+	}
+	phone, _ := s.Client(ctx, store.ByName("phone"))
+	clk.t = time.Date(2026, 9, 26, 12, 34, 7, 0, time.UTC)
+	at := func(h, m int) time.Time { return time.Date(2026, 9, 26, h, m, 0, 0, time.UTC) }
+	err := s.Store.InsertTraffic(ctx, []store.TrafficSample{
+		{ClientID: phone.ID, Resolution: store.ResolutionRaw, BucketStart: at(11, 20), RxBytes: 1, TxBytes: 1}, // before the hour's range
+		{ClientID: phone.ID, Resolution: store.ResolutionRaw, BucketStart: at(12, 31), RxBytes: 2, TxBytes: 2},
+		{ClientID: phone.ID, Resolution: store.ResolutionRaw, BucketStart: at(12, 32), RxBytes: 3, TxBytes: 3},
+		{ClientID: phone.ID, Resolution: store.ResolutionRaw, BucketStart: at(12, 33), RxBytes: 4, TxBytes: 4}, // still settling
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Now is 12:34:07. The 12:33 bucket ended seven seconds ago, so the poll that saves it may
+	// not have run: the history stops at 12:33, leaving the bucket out rather than showing zero.
+	h, err := s.ClientsTraffic(ctx, store.ResolutionRaw, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if h.Step != time.Minute || !h.Until.Equal(at(12, 33)) {
+		t.Fatalf("step %v until %v, want 1m and 12:33", h.Step, h.Until)
+	}
+	if got := h.Series[0].Samples; len(got) != 2 || !got[0].BucketStart.Equal(at(12, 31)) || !got[1].BucketStart.Equal(at(12, 32)) {
+		t.Fatalf("samples %+v, want 12:31 and 12:32 only", got)
+	}
+
+	// Past the margin, the 12:33 bucket is in.
+	clk.advance(10 * time.Second)
+	if h, err = s.ClientsTraffic(ctx, store.ResolutionRaw, time.Hour); err != nil || len(h.Series[0].Samples) != 3 {
+		t.Fatalf("after the margin: %+v, err %v, want 12:33 too", h.Series[0].Samples, err)
+	}
+
+	// The hourly rollup ends at the last whole hour, and its step is an hour, whatever the raw
+	// interval is.
+	s.TrafficRawInterval = 15 * time.Second
+	if err = s.Store.InsertTraffic(ctx, []store.TrafficSample{
+		{ClientID: phone.ID, Resolution: store.ResolutionRaw, BucketStart: at(10, 5), RxBytes: 10, TxBytes: 5},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if h, err = s.ClientsTraffic(ctx, store.ResolutionHourly, 7*24*time.Hour); err != nil {
+		t.Fatal(err)
+	}
+	if h.Step != time.Hour || !h.Until.Equal(at(12, 0)) {
+		t.Fatalf("hourly step %v until %v, want 1h and 12:00", h.Step, h.Until)
+	}
+	// 10:00 (the raw row at 10:05) and 11:00 (11:20); 12:00's rows are in an hour that isn't over.
+	if got := h.Series[0].Samples; len(got) != 2 || !got[0].BucketStart.Equal(at(10, 0)) || got[0].RxBytes != 10 ||
+		!got[1].BucketStart.Equal(at(11, 0)) {
+		t.Fatalf("hourly samples %+v", got)
+	}
+}

@@ -37,6 +37,34 @@ export function formatBytes(n: number): string {
 	return `${n.toFixed(digits)} ${units[i]}`;
 }
 
+/**
+ * Formats a rate in bits per second with decimal units and three significant digits:
+ * "0 bps", "272 bps", "62.4 Kbps", "3.71 Mbps".
+ */
+export function formatBitrate(bps: number): string {
+	const units = ['bps', 'Kbps', 'Mbps', 'Gbps', 'Tbps'];
+	let i = 0;
+	while (bps >= 1000 && i < units.length - 1) {
+		bps /= 1000;
+		i++;
+	}
+	return `${Number(bps.toPrecision(3))} ${units[i]}`;
+}
+
+/**
+ * Formats a chart's timestamp (seconds since the epoch) in the browser's time zone: "Sep 30,
+ * 6:24 PM", or with seconds when `seconds` is set, for samples a few seconds wide.
+ */
+export function formatChartTime(sec: number, seconds = false): string {
+	return new Date(sec * 1000).toLocaleString(undefined, {
+		month: 'short',
+		day: 'numeric',
+		hour: 'numeric',
+		minute: '2-digit',
+		second: seconds ? '2-digit' : undefined
+	});
+}
+
 /** Formats how long ago a time was: "just now", "42 s ago", "5 min ago", "3 h ago", "2 d ago". */
 export function formatAgo(iso: string | undefined, now: number): string {
 	if (!iso) return 'never';

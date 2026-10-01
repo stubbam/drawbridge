@@ -988,6 +988,40 @@
         ]
       }
     },
+    "/api/traffic/clients": {
+      "get": {
+        "summary": "Every client's traffic history, one series per client",
+        "responses": {
+          "401": {
+            "$ref": "#/components/responses/NotLoggedIn"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "200": {
+            "description": "The charts page's data. Every client is in it, by name, and every sample is complete.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrafficHistory"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Invalid"
+          }
+        },
+        "tags": [
+          "clients"
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/TrafficRange"
+          }
+        ]
+      }
+    },
     "/api/events": {
       "get": {
         "summary": "The event log",
@@ -1702,6 +1736,55 @@
           },
           "send_bytes": {
             "type": "integer"
+          }
+        }
+      },
+      "ClientTraffic": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "samples"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "samples": {
+            "type": "array",
+            "description": "Oldest first. A stored bucket in which the client moved nothing isn't saved, and means zero; a 1m range has a sample at every poll.",
+            "items": {
+              "$ref": "#/components/schemas/TrafficSample"
+            }
+          }
+        }
+      },
+      "TrafficHistory": {
+        "type": "object",
+        "required": [
+          "step_seconds",
+          "until",
+          "clients"
+        ],
+        "properties": {
+          "step_seconds": {
+            "type": "number",
+            "description": "How long one sample covers, so a sample's bytes over it is a rate: the poll interval for 1m, the raw interval for 1h, 12h, and 24h, and an hour for the rest."
+          },
+          "until": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Where the history ends. Every sample is complete, and a bucket still filling isn't in it."
+          },
+          "clients": {
+            "type": "array",
+            "description": "Every client, sorted by name.",
+            "items": {
+              "$ref": "#/components/schemas/ClientTraffic"
+            }
           }
         }
       },

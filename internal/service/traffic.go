@@ -2,6 +2,8 @@ package service
 
 import (
 	"context"
+	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -18,7 +20,17 @@ const (
 	DefaultTrafficRawInterval     = time.Minute
 	DefaultTrafficRawRetention    = 48 * time.Hour
 	DefaultTrafficHourlyRetention = 90 * 24 * time.Hour
+	// DefaultTrackInterval is the daemon's --session-interval default, which is how often
+	// TrackConnections runs and so how wide a live sample is.
+	DefaultTrackInterval = 5 * time.Second
 )
+
+func (s *Service) trackInterval() time.Duration {
+	if s.TrackInterval > 0 {
+		return s.TrackInterval
+	}
+	return DefaultTrackInterval
+}
 
 func (s *Service) trafficRawInterval() time.Duration {
 	if s.TrafficRawInterval > 0 {
@@ -101,6 +113,25 @@ func (l *liveTraffic) samples(clientID string, since time.Time) []store.TrafficS
 			sum = t.clients[clientID]
 		}
 		out = append(out, store.TrafficSample{ClientID: clientID, BucketStart: t.at, RxBytes: sum.rx, TxBytes: sum.tx})
+	}
+	return out
+}
+
+// byClient returns, for each of ids, one sample per poll since the given time, oldest first. A
+// client that moved nothing in a poll gets a zero sample, so every client has a sample at every
+// poll and the series line up.
+func (l *liveTraffic) byClient(ids []string, since time.Time) map[string][]store.TrafficSample {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	out := make(map[string][]store.TrafficSample, len(ids))
+	for _, t := range l.ticks {
+		if t.at.Before(since) {
+			continue
+		}
+		for _, id := range ids {
+			b := t.clients[id]
+			out[id] = append(out[id], store.TrafficSample{ClientID: id, BucketStart: t.at, RxBytes: b.rx, TxBytes: b.tx})
+		}
 	}
 	return out
 }
@@ -244,4 +275,69 @@ func (s *Service) TotalTraffic(ctx context.Context, resolution string, lookback 
 		return s.live.samples("", since), nil
 	}
 	return s.Store.TotalTraffic(ctx, resolution, since)
+}
+
+// TrafficSeries is one client's samples in a TrafficHistory.
+type TrafficSeries struct {
+	Client  model.Client
+	Samples []store.TrafficSample
+}
+
+// TrafficHistory is every client's traffic over one chart range, for the charts page.
+type TrafficHistory struct {
+	// Step is how long one sample covers: the poll interval for live samples, the raw interval
+	// for stored ones, and an hour for the hourly rollup. Dividing a sample's bytes by it gives
+	// a rate.
+	Step time.Duration
+	// Until is where the history ends. Every sample is complete: a stored bucket is left out
+	// until it has ended and the poll after it has flushed it, so the chart never mistakes a
+	// bucket that's still filling, or isn't saved yet, for one in which nothing moved. Live
+	// samples are the exception to "stored": a poll is complete as soon as it's taken.
+	Until time.Time
+	// Series has every client, by name. A stored client's samples are sparse (a bucket in which
+	// it moved nothing isn't saved, and means zero); a live client has one at every poll.
+	Series []TrafficSeries
+}
+
+// ClientsTraffic returns every client's traffic over the range that resolution and lookback
+// describe (views.ParseTrafficRange), ending at the last complete sample.
+func (s *Service) ClientsTraffic(ctx context.Context, resolution string, lookback time.Duration) (TrafficHistory, error) {
+	clients, err := s.Store.Clients(ctx)
+	if err != nil {
+		return TrafficHistory{}, err
+	}
+	sort.Slice(clients, func(i, j int) bool {
+		a, b := strings.ToLower(clients[i].Name), strings.ToLower(clients[j].Name)
+		if a != b {
+			return a < b
+		}
+		return clients[i].ID < clients[j].ID
+	})
+	now := s.now().UTC()
+	h := TrafficHistory{}
+	var by map[string][]store.TrafficSample
+	if resolution == ResolutionLive {
+		h.Step = s.trackInterval()
+		h.Until = now.Truncate(time.Second)
+		ids := make([]string, len(clients))
+		for i, c := range clients {
+			ids[i] = c.ID
+		}
+		by = s.live.byClient(ids, h.Until.Add(-lookback))
+	} else {
+		h.Step = s.trafficRawInterval()
+		if resolution == store.ResolutionHourly {
+			h.Step = time.Hour
+		}
+		// A bucket is saved by the first poll after it ends, so give that poll two intervals.
+		h.Until = now.Add(-2 * s.trackInterval()).Truncate(h.Step)
+		by, err = s.Store.ClientsTraffic(ctx, resolution, h.Until.Add(-lookback), h.Until)
+		if err != nil {
+			return TrafficHistory{}, err
+		}
+	}
+	for _, c := range clients {
+		h.Series = append(h.Series, TrafficSeries{Client: c, Samples: by[c.ID]})
+	}
+	return h, nil
 }

@@ -48,6 +48,10 @@ type Service struct {
 	// exist so a host on an SD card can keep the conservative defaults while one on an
 	// NVMe SSD can afford a finer interval or longer retention.
 	TrafficRawInterval, TrafficRawRetention, TrafficHourlyRetention time.Duration
+	// TrackInterval is how often the daemon calls TrackConnections; zero means
+	// DefaultTrackInterval. The charts need it to turn the live samples into rates and to
+	// know how long a stored bucket takes to settle (ClientsTraffic).
+	TrackInterval time.Duration
 	// trafficBuf is the in-memory buffer SampleTraffic accumulates into between flushes.
 	// It's runtime state, not a dependency, and is touched only from the connTrackLoop
 	// goroutine, so it needs no lock.

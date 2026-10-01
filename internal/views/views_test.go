@@ -205,3 +205,22 @@ func TestViewsHaveNoKeys(t *testing.T) {
 		t.Fatalf("the settings view has a private key: %s", b)
 	}
 }
+
+func TestNewTrafficSamples(t *testing.T) {
+	until := time.Date(2026, 9, 28, 10, 5, 0, 0, time.UTC)
+	got := NewTrafficSamples(service.TrafficSamples{
+		Step:  time.Minute,
+		Until: until,
+		Samples: []store.TrafficSample{
+			{BucketStart: until.Add(-time.Minute), RxBytes: 100, TxBytes: 50},
+		},
+	})
+	if got.StepSeconds != 60 || !got.Until.Equal(until) || len(got.Samples) != 1 || got.Samples[0].SendBytes != 50 {
+		t.Fatalf("got %+v", got)
+	}
+	// No samples is an empty list in JSON, never null: the charts read it as an array.
+	b, err := json.Marshal(NewTrafficSamples(service.TrafficSamples{Step: 5 * time.Second, Until: until}))
+	if err != nil || !strings.Contains(string(b), `"samples":[]`) || !strings.Contains(string(b), `"step_seconds":5`) {
+		t.Fatalf("marshaled %s, err %v", b, err)
+	}
+}

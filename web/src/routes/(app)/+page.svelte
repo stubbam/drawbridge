@@ -7,27 +7,28 @@
 		type ServerStatus,
 		type Settings,
 		type TrafficRange,
-		type TrafficSample
+		type TrafficSeries
 	} from '$lib/api';
 	import { errorMessage } from '$lib/errors';
-	import { clientState, endpointAddress, formatBytes } from '$lib/format';
+	import { clientState, endpointAddress, formatBitrate, formatBytes } from '$lib/format';
 	import { poll } from '$lib/poll';
+	import { chartRange } from '$lib/range.svelte';
 	import { sortClients, storedSort, storeSort, type SortKey } from '$lib/sort';
-	import { refreshMs } from '$lib/traffic';
+	import { buildSeriesData, refreshMs, throughputSeries } from '$lib/traffic';
 	import CopyButton from '$lib/components/CopyButton.svelte';
+	import NetworkChart from '$lib/components/NetworkChart.svelte';
 	import RangeSelect from '$lib/components/RangeSelect.svelte';
 	import SortSelect from '$lib/components/SortSelect.svelte';
 	import StateBadge from '$lib/components/StateBadge.svelte';
-	import TrafficChart from '$lib/components/TrafficChart.svelte';
 	import { fetchVersion, formatVersion, type VersionInfo } from '$lib/version';
 
 	let settings = $state<Settings>();
 	let status = $state<ServerStatus>();
 	let clients = $state<Client[]>([]);
-	let traffic = $state<TrafficSample[]>([]);
-	let trafficRange = $state<TrafficRange>('24h');
-	// The range `traffic` holds, which lags trafficRange until the new range's data arrives.
-	let trafficShown = $state<TrafficRange>('24h');
+	let traffic = $state<TrafficSeries>();
+	// The range `traffic` holds, which lags the chosen range until the new range's data arrives.
+	let trafficShown = $state<TrafficRange>(chartRange.value);
+	let throughput = $derived(traffic ? buildSeriesData(traffic, trafficShown) : undefined);
 	let version = $state<VersionInfo>();
 	let error = $state('');
 	let now = $state(Date.now());
@@ -44,11 +45,11 @@
 
 	async function loadTraffic() {
 		try {
-			const asked = trafficRange;
-			const samples = await api.traffic(asked);
+			const asked = chartRange.value;
+			const series = await api.traffic(asked);
 			// A slower response to an earlier range mustn't replace the current one.
-			if (asked !== trafficRange) return;
-			traffic = samples;
+			if (asked !== chartRange.value) return;
+			traffic = series;
 			trafficShown = asked;
 		} catch {
 			// The chart just stays as it was; load() above already shows a real error.
@@ -74,7 +75,7 @@
 	// Traffic history is minute-granularity at best (the 1 minute range is the exception), so it
 	// doesn't need the 5s peer-status cadence above; changing the range restarts this poll, for
 	// an immediate refetch.
-	$effect(() => poll(loadTraffic, refreshMs(trafficRange)));
+	$effect(() => poll(loadTraffic, refreshMs(chartRange.value)));
 	$effect(() => {
 		fetchVersion().then(
 			(v) => (version = v),
@@ -143,11 +144,25 @@
 {/if}
 
 <section class="card flex flex-col gap-3" aria-labelledby="throughput-heading">
-	<div class="flex flex-wrap items-center justify-between gap-2">
-		<h2 id="throughput-heading" class="font-semibold">Total Throughput</h2>
-		<RangeSelect id="dashboard-range" bind:value={trafficRange} />
+	<div class="flex flex-wrap items-start justify-between gap-2">
+		<div>
+			<h2 id="throughput-heading" class="font-semibold">Total Throughput</h2>
+			<p class="text-sm text-neutral-500 dark:text-neutral-400">Network traffic of all clients</p>
+		</div>
+		<RangeSelect id="dashboard-range" />
 	</div>
-	<TrafficChart data={traffic} range={trafficShown} label="Total Throughput" />
+	<NetworkChart
+		x={throughput?.x ?? []}
+		series={throughput ? throughputSeries(throughput, 'rate') : []}
+		domain={throughput?.domain ?? [0, 0]}
+		step={throughput?.step ?? 0}
+		range={trafficShown}
+		format={formatBitrate}
+		label="Total Throughput"
+		total
+		legend={false}
+		empty={throughput ? 'No traffic in this range' : 'Loading…'}
+	/>
 </section>
 
 <div class="grid gap-6 lg:grid-cols-2">

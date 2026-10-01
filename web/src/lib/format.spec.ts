@@ -11,7 +11,10 @@ import {
 	formatAgo,
 	formatBitrate,
 	formatBytes,
-	formatChartTime
+	formatChartTime,
+	formatClock,
+	formatDay,
+	formatTime
 } from './format';
 
 const now = Date.parse('2026-09-26T12:00:00Z');
@@ -141,15 +144,37 @@ describe('formatBitrate', () => {
 	});
 });
 
-describe('formatChartTime', () => {
-	it('shows the date and the time, with seconds only when asked', () => {
-		const sec = Date.parse('2026-09-30T18:24:05Z') / 1000;
-		const plain = formatChartTime(sec);
-		const withSeconds = formatChartTime(sec, true);
-		expect(plain).toMatch(/Sep|30/);
-		// The same minute, and the seconds are the only difference.
-		expect(withSeconds.length).toBeGreaterThan(plain.length);
-		expect(withSeconds).toMatch(/:05\b/);
-		expect(plain).not.toMatch(/:05\b/);
+describe('the 24-hour clock and day-month dates', () => {
+	// Built from local fields, so they read the same in any time zone.
+	const at = new Date(2026, 8, 9, 7, 5, 3);
+
+	it('formatClock is HH:mm, or HH:mm:ss, with no am or pm', () => {
+		expect(formatClock(at)).toBe('07:05');
+		expect(formatClock(at, true)).toBe('07:05:03');
+		expect(formatClock(new Date(2026, 8, 9, 19, 0, 0))).toBe('19:00');
+		expect(formatClock(new Date(2026, 8, 9, 0, 0, 0))).toBe('00:00');
+		expect(formatClock(new Date(2026, 8, 9, 12, 30, 0))).toBe('12:30');
+	});
+
+	it('formatDay is the day and the English month, with the year only when asked', () => {
+		expect(formatDay(at)).toBe('9 Sep');
+		expect(formatDay(at, true)).toBe('9 Sep 2026');
+		expect(formatDay(new Date(2026, 0, 31))).toBe('31 Jan');
+		expect(formatDay(new Date(2026, 11, 1))).toBe('1 Dec');
+	});
+
+	it('formatChartTime is the tooltip heading, to the second only when asked', () => {
+		const sec = new Date(2026, 8, 30, 18, 24, 5).getTime() / 1000;
+		expect(formatChartTime(sec)).toBe('30 Sep at 18:24');
+		expect(formatChartTime(sec, true)).toBe('30 Sep at 18:24:05');
+	});
+
+	it('formatTime is the date and the time, with the year only when it is not this one', () => {
+		const iso = at.toISOString();
+		expect(formatTime(iso, new Date(2026, 9, 1))).toBe('9 Sep 07:05:03');
+		expect(formatTime(iso, new Date(2027, 0, 1))).toBe('9 Sep 2026 07:05:03');
+		expect(formatTime(iso, new Date(2026, 9, 1))).not.toMatch(/[ap]m/i);
+		// Not a date: shown as it came.
+		expect(formatTime('not a time')).toBe('not a time');
 	});
 });

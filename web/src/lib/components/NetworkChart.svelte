@@ -2,7 +2,8 @@
 	import { untrack } from 'svelte';
 	import uPlot from 'uplot';
 	import 'uplot/dist/uPlot.min.css';
-	import { axisSize } from '$lib/chart';
+	import type { TrafficRange } from '$lib/api';
+	import { axisSize, xAxis } from '$lib/chart';
 	import { formatChartTime } from '$lib/format';
 	import type { ChartSeries } from '$lib/traffic';
 
@@ -11,8 +12,11 @@
 		series,
 		domain,
 		step,
+		range,
 		format,
 		label,
+		total = false,
+		legend = true,
 		empty = 'No traffic in this range'
 	}: {
 		/** The bucket times, in seconds. */
@@ -23,15 +27,21 @@
 		domain: [number, number];
 		/** Seconds each point covers; a few seconds wide means times show their seconds. */
 		step: number;
+		/** The range the chart shows, which decides what the x axis says and where. */
+		range: TrafficRange;
 		/** Formats a value for the y axis and the tooltip. */
 		format: (v: number) => string;
 		/** The chart's accessible name. The page's heading is what's drawn above it. */
 		label: string;
-		/** What to say when no client has any traffic. */
+		/** Adds a Total row, the sum of the lines, to the tooltip. */
+		total?: boolean;
+		/** Whether to list the lines under the chart. The tooltip names them either way. */
+		legend?: boolean;
+		/** What to say when there's no traffic. */
 		empty?: string;
 	} = $props();
 
-	const height = 220;
+	const height = 240;
 
 	let container: HTMLDivElement | undefined;
 	let chart: uPlot | undefined;
@@ -63,7 +73,7 @@
 
 	// What follows the cursor: the time, then each client's value there. uPlot's own legend sits
 	// in the layout; this floats over the plot instead, beside the cursor.
-	function tooltip(names: string[], tints: string[]): uPlot.Plugin {
+	function tooltip(names: string[], tints: string[], withTotal: boolean): uPlot.Plugin {
 		let tip: HTMLDivElement;
 		const text = (cls: string, content: string) => {
 			const el = document.createElement('span');
@@ -99,6 +109,17 @@
 						);
 						return row;
 					});
+					if (withTotal) {
+						const sum = names.reduce((n, _, i) => n + (u.data[i + 1][idx] ?? 0), 0);
+						const row = document.createElement('div');
+						row.className =
+							'mt-1 flex items-center gap-2 border-t border-neutral-200 pt-1 dark:border-neutral-700';
+						row.append(
+							text('text-neutral-600 dark:text-neutral-300', 'Total'),
+							text('ml-auto pl-3 font-medium tabular-nums', format(sum))
+						);
+						rows.push(row);
+					}
 					tip.replaceChildren(
 						text('mb-1 block font-semibold', formatChartTime(u.data[0][idx], step < 60)),
 						...rows
@@ -151,8 +172,7 @@
 					y: { range: (_u, _min, max) => [0, max > 0 ? max * 1.1 : 1] }
 				},
 				axes: [
-					// Horizontal gridlines only: vertical ones are noise on a time axis.
-					{ stroke: c.text, grid: { show: false } },
+					xAxis(range, c.text),
 					{ stroke: c.text, grid: { stroke: c.grid }, values: byValue, size: axisSize }
 				],
 				series: [
@@ -170,7 +190,8 @@
 				plugins: [
 					tooltip(
 						series.map((s) => s.name),
-						tints
+						tints,
+						total
 					)
 				]
 			},
@@ -179,10 +200,12 @@
 		);
 	}
 
-	// What a rebuild is for: the lines (their names and colors), how wide a point is, and the
-	// theme. New values for the same lines go in with setData below, so the chart under the
-	// cursor isn't torn down by every refresh.
-	let shape = $derived(JSON.stringify([series.map((s) => [s.id, s.name, s.color]), step]));
+	// What a rebuild is for: the lines (their names and colors), the range, how wide a point is,
+	// and the theme. New values for the same lines go in with setData below, so the chart under
+	// the cursor isn't torn down by every refresh.
+	let shape = $derived(
+		JSON.stringify([series.map((s) => [s.id, s.name, s.color]), range, step, total])
+	);
 
 	$effect(() => {
 		void shape;
@@ -230,7 +253,7 @@
 		aria-label="{label} chart"
 		hidden={series.length === 0}
 	></div>
-	{#if series.length > 0}
+	{#if legend && series.length > 0}
 		<ul
 			class="mt-3 flex flex-wrap justify-center gap-x-4 gap-y-1 text-sm text-neutral-600 dark:text-neutral-300"
 			aria-label="{label} legend"

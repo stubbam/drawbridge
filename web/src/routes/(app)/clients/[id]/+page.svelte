@@ -1,6 +1,5 @@
 <script lang="ts">
 	import QRCode from 'qrcode';
-	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import {
@@ -10,7 +9,7 @@
 		type ClientSession,
 		type DrawbridgeEvent,
 		type TrafficRange,
-		type TrafficSample
+		type TrafficSeries
 	} from '$lib/api';
 	import { errorMessage } from '$lib/errors';
 	import {
@@ -20,24 +19,28 @@
 		eventDetails,
 		eventLabel,
 		formatAgo,
+		formatBitrate,
 		formatBytes,
 		formatTime
 	} from '$lib/format';
 	import { poll } from '$lib/poll';
-	import { refreshMs } from '$lib/traffic';
+	import { chartRange } from '$lib/range.svelte';
+	import { buildSeriesData, refreshMs, throughputSeries } from '$lib/traffic';
 	import CopyButton from '$lib/components/CopyButton.svelte';
+	import DeleteClientModal from '$lib/components/DeleteClientModal.svelte';
+	import NetworkChart from '$lib/components/NetworkChart.svelte';
 	import RangeSelect from '$lib/components/RangeSelect.svelte';
+	import RenameClientModal from '$lib/components/RenameClientModal.svelte';
 	import Result from '$lib/components/Result.svelte';
 	import StateBadge from '$lib/components/StateBadge.svelte';
-	import TrafficChart from '$lib/components/TrafficChart.svelte';
 
 	let id = $derived(page.params.id ?? '');
 	let client = $state<Client>();
 	let events = $state<DrawbridgeEvent[]>([]);
-	let traffic = $state<TrafficSample[]>([]);
-	let trafficRange = $state<TrafficRange>('24h');
-	// The range `traffic` holds, which lags trafficRange until the new range's data arrives.
-	let trafficShown = $state<TrafficRange>('24h');
+	let traffic = $state<TrafficSeries>();
+	// The range `traffic` holds, which lags the chosen range until the new range's data arrives.
+	let trafficShown = $state<TrafficRange>(chartRange.value);
+	let throughput = $derived(traffic ? buildSeriesData(traffic, trafficShown) : undefined);
 	let sessions = $state<ClientSession[]>([]);
 	let missing = $state(false);
 	let now = $state(Date.now());
@@ -47,8 +50,8 @@
 	let busy = $state(false);
 	let qr = $state('');
 	let configError = $state('');
-	let newName = $state('');
-	let confirmDelete = $state(false);
+	let showRename = $state(false);
+	let showDelete = $state(false);
 
 	async function load() {
 		try {
@@ -65,15 +68,15 @@
 
 	async function loadHistory() {
 		try {
-			const asked = trafficRange;
-			const [samples, recent] = await Promise.all([
+			const asked = chartRange.value;
+			const [series, recent] = await Promise.all([
 				api.clientTraffic(id, asked),
 				api.clientSessions(id, undefined, 20)
 			]);
 			sessions = recent;
 			// A slower response to an earlier range mustn't replace the current one.
-			if (asked !== trafficRange) return;
-			traffic = samples;
+			if (asked !== chartRange.value) return;
+			traffic = series;
 			trafficShown = asked;
 		} catch {
 			// load() above already shows a real error; the history sections just stay as they were.
@@ -82,7 +85,7 @@
 	// Traffic and session history change far less often than live peer status (the 1 minute
 	// range is the exception), so this polls on its own cadence; changing the range restarts it
 	// for an immediate refetch.
-	$effect(() => poll(loadHistory, refreshMs(trafficRange)));
+	$effect(() => poll(loadHistory, refreshMs(chartRange.value)));
 
 	// A client that was just added shows its QR code at once.
 	$effect(() => {
@@ -144,22 +147,11 @@
 		}
 	}
 
-	async function rename(e: SubmitEvent) {
-		e.preventDefault();
-		await run(() => api.renameClient(id, newName.trim()), 'Renamed.');
-		if (!error) newName = '';
-	}
-
-	async function remove() {
+	// The rename dialog saved the new name: show it, and say so.
+	async function renamed() {
 		reset();
-		busy = true;
-		try {
-			await api.deleteClient(id);
-			await goto(resolve('/clients'));
-		} catch (err) {
-			error = errorMessage(err);
-			busy = false;
-		}
+		success = 'Renamed.';
+		await load();
 	}
 </script>
 
@@ -178,26 +170,34 @@
 			<h1 class="text-2xl font-semibold tracking-tight">{client.name}</h1>
 			<StateBadge {state} />
 		</div>
-		{#if client.enabled}
+		<div class="flex flex-wrap gap-2">
+			{#if client.enabled}
+				<button
+					type="button"
+					class="btn"
+					disabled={busy}
+					onclick={() => run(() => api.pauseClient(id), 'Paused. The client is out of the tunnel.')}
+					>Pause</button
+				>
+			{:else}
+				<button
+					type="button"
+					class="btn btn-primary"
+					disabled={busy}
+					onclick={() =>
+						run(
+							() => api.resumeClient(id),
+							'Resumed. The client reconnects within about 15 seconds.'
+						)}>Resume</button
+				>
+			{/if}
+			<button type="button" class="btn" onclick={() => (showRename = true)}>Rename</button>
 			<button
 				type="button"
-				class="btn"
-				disabled={busy}
-				onclick={() => run(() => api.pauseClient(id), 'Paused. The client is out of the tunnel.')}
-				>Pause</button
+				class="btn text-red-700 dark:text-red-400"
+				onclick={() => (showDelete = true)}>Delete</button
 			>
-		{:else}
-			<button
-				type="button"
-				class="btn btn-primary"
-				disabled={busy}
-				onclick={() =>
-					run(
-						() => api.resumeClient(id),
-						'Resumed. The client reconnects within about 15 seconds.'
-					)}>Resume</button
-			>
-		{/if}
+		</div>
 	</div>
 
 	<Result {error} {warning} {success} />
@@ -264,11 +264,46 @@
 	</div>
 
 	<section class="card flex flex-col gap-3" aria-labelledby="traffic-heading">
-		<div class="flex flex-wrap items-center justify-between gap-2">
-			<h2 id="traffic-heading" class="font-semibold">Total Throughput</h2>
-			<RangeSelect id="client-traffic-range" bind:value={trafficRange} />
+		<div class="flex flex-wrap items-start justify-between gap-2">
+			<div>
+				<h2 id="traffic-heading" class="font-semibold">Total Throughput</h2>
+				<p class="text-sm text-neutral-500 dark:text-neutral-400">Network traffic of this client</p>
+			</div>
+			<RangeSelect id="client-traffic-range" />
 		</div>
-		<TrafficChart data={traffic} range={trafficShown} label="Total Throughput" />
+		<NetworkChart
+			x={throughput?.x ?? []}
+			series={throughput ? throughputSeries(throughput, 'rate') : []}
+			domain={throughput?.domain ?? [0, 0]}
+			step={throughput?.step ?? 0}
+			range={trafficShown}
+			format={formatBitrate}
+			label="Total Throughput"
+			total
+			legend={false}
+			empty={throughput ? 'No traffic in this range' : 'Loading…'}
+		/>
+	</section>
+
+	<section class="card flex flex-col gap-3" aria-labelledby="cumulative-heading">
+		<div>
+			<h2 id="cumulative-heading" class="font-semibold">Cumulative Traffic</h2>
+			<p class="text-sm text-neutral-500 dark:text-neutral-400">
+				Total data received and sent since the start of the range
+			</p>
+		</div>
+		<NetworkChart
+			x={throughput?.x ?? []}
+			series={throughput ? throughputSeries(throughput, 'cumulative') : []}
+			domain={throughput?.domain ?? [0, 0]}
+			step={throughput?.step ?? 0}
+			range={trafficShown}
+			format={formatBytes}
+			label="Cumulative Traffic"
+			total
+			legend={false}
+			empty={throughput ? 'No traffic in this range' : 'Loading…'}
+		/>
 	</section>
 
 	<section class="card flex flex-col gap-3" aria-labelledby="sessions-heading">
@@ -323,44 +358,8 @@
 		{/if}
 	</section>
 
-	<section class="card flex flex-col gap-4" aria-labelledby="manage-heading">
-		<h2 id="manage-heading" class="font-semibold">Manage</h2>
-		<form class="flex flex-col gap-2 sm:flex-row sm:items-end" onsubmit={rename}>
-			<div class="flex-1">
-				<label class="label" for="rename">Rename</label>
-				<input
-					class="input"
-					id="rename"
-					placeholder={client.name}
-					maxlength="64"
-					required
-					bind:value={newName}
-				/>
-				<p class="hint">The name is only for you: the config and the keys stay the same.</p>
-			</div>
-			<button class="btn sm:mb-5" type="submit" disabled={busy}>Rename</button>
-		</form>
-		<div class="border-t border-neutral-100 pt-4 dark:border-neutral-800">
-			{#if confirmDelete}
-				<p class="mb-2 text-sm">
-					Delete <strong>{client.name}</strong>? Its config stops working at once, and this can't be
-					undone.
-				</p>
-				<div class="flex gap-2">
-					<button type="button" class="btn btn-danger" disabled={busy} onclick={remove}
-						>Delete</button
-					>
-					<button type="button" class="btn" onclick={() => (confirmDelete = false)}>Cancel</button>
-				</div>
-			{:else}
-				<button
-					type="button"
-					class="btn text-red-700 dark:text-red-400"
-					onclick={() => (confirmDelete = true)}>Delete this client…</button
-				>
-			{/if}
-		</div>
-	</section>
+	<RenameClientModal bind:open={showRename} {id} current={client.name} onrenamed={renamed} />
+	<DeleteClientModal bind:open={showDelete} {id} name={client.name} />
 {:else if error}
 	<p class="alert-error" role="alert">{error}</p>
 {:else}

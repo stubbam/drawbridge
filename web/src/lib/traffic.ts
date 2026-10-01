@@ -1,4 +1,4 @@
-import type { TrafficHistory, TrafficRange, TrafficSample } from './api';
+import type { TrafficHistory, TrafficRange, TrafficSeries } from './api';
 
 export const rangeLabels: Record<TrafficRange, string> = {
 	'1m': '1 Minute',
@@ -12,7 +12,8 @@ export const rangeLabels: Record<TrafficRange, string> = {
 
 export const trafficRanges: TrafficRange[] = ['1m', '1h', '12h', '24h', '7d', '30d', '90d'];
 
-const rangeSeconds: Record<TrafficRange, number> = {
+/** How long each range is, in seconds. */
+export const rangeSeconds: Record<TrafficRange, number> = {
 	'1m': 60,
 	'1h': 3600,
 	'12h': 12 * 3600,
@@ -29,32 +30,6 @@ const rangeSeconds: Record<TrafficRange, number> = {
  */
 export function refreshMs(range: TrafficRange): number {
 	return range === '1m' ? 5000 : 60000;
-}
-
-/**
- * The x axis for a range: the whole window ending now, in seconds. Without it the axis
- * shrinks to wherever the data happens to start, so a short history fills the plot and every
- * range looks like a different scale.
- */
-export function xRange(range: TrafficRange, nowMs: number): [number, number] {
-	const end = Math.floor(nowMs / 1000);
-	return [end - rangeSeconds[range], end];
-}
-
-/**
- * Converts traffic samples into uPlot's aligned-data format: a timestamps series (in
- * seconds, uPlot's default) plus one series each for received and sent bytes.
- */
-export function toUplotData(samples: TrafficSample[]): [number[], number[], number[]] {
-	const x: number[] = [];
-	const rx: number[] = [];
-	const tx: number[] = [];
-	for (const s of samples) {
-		x.push(Date.parse(s.bucket_start) / 1000);
-		rx.push(s.receive_bytes);
-		tx.push(s.send_bytes);
-	}
-	return [x, rx, tx];
 }
 
 /** What a chart plots for one client: the values line up with `ChartData.x`. */
@@ -143,51 +118,65 @@ export function displayStep(native: number, span: number): number {
 	return Math.ceil(want / native) * native;
 }
 
+/** The time axis of a chart: where its points are, and which point a sample belongs to. */
+interface Layout {
+	/** The point times, in seconds. */
+	x: number[];
+	domain: [number, number];
+	/** Seconds each point covers. */
+	step: number;
+	pointOf: (t: number) => number | undefined;
+}
+
 /**
- * Lays a traffic history out for the charts: one shared time axis, with each client's bytes in
- * every point (zero where it moved nothing, which also means a quiet stretch reads as a dip to
- * zero and not a line drawn across it). Clients with no traffic in the range are left out, since
- * a line along the floor says nothing.
+ * Lays out the axis for a history that ends at `until` and takes `stepSeconds` a sample, whose
+ * samples are at `times`.
  *
  * A stored range is averaged into about 144 points (displayStep), counted back from `until` so
  * every point is whole. A 1m range keeps the polls themselves as its points: the server sends a
- * sample for every client at every poll, and the polls aren't on a grid.
+ * sample at every poll, and the polls aren't on a grid.
  */
-export function buildChartData(h: TrafficHistory, range: TrafficRange): ChartData {
-	const end = Date.parse(h.until) / 1000;
+function layout(range: TrafficRange, stepSeconds: number, until: string, times: number[]): Layout {
+	const end = Date.parse(until) / 1000;
 	const span = rangeSeconds[range];
 	const start = end - span;
-	let step = h.step_seconds;
-	let x: number[];
-	let pointOf: (t: number) => number | undefined;
 	if (range === '1m') {
-		const seen = new Set<number>();
-		for (const c of h.clients) {
-			for (const s of c.samples) {
-				const t = Date.parse(s.bucket_start) / 1000;
-				if (t >= start && t <= end) seen.add(t);
-			}
-		}
-		x = [...seen].sort((a, b) => a - b);
+		const x = [...new Set(times.filter((t) => t >= start && t <= end))].sort((a, b) => a - b);
 		const at = new Map(x.map((t, i) => [t, i]));
-		pointOf = (t) => at.get(t);
-	} else {
-		step = displayStep(step, span);
-		const n = Math.ceil(span / step - 1e-9);
-		const first = end - n * step;
-		x = Array.from({ length: n }, (_, j) => first + j * step);
-		pointOf = (t) => {
+		return { x, domain: [start, end], step: stepSeconds, pointOf: (t) => at.get(t) };
+	}
+	const step = displayStep(stepSeconds, span);
+	const n = Math.ceil(span / step - 1e-9);
+	const first = end - n * step;
+	return {
+		x: Array.from({ length: n }, (_, j) => first + j * step),
+		domain: [start, end],
+		step,
+		pointOf: (t) => {
 			const j = Math.floor((t - first) / step + 1e-9);
 			return j >= 0 && j < n ? j : undefined;
-		};
-	}
+		}
+	};
+}
+
+const sampleTime = (s: { bucket_start: string }) => Date.parse(s.bucket_start) / 1000;
+
+/**
+ * Lays a traffic history out for the charts page: one shared time axis, with each client's bytes
+ * in every point (zero where it moved nothing, which also means a quiet stretch reads as a dip to
+ * zero and not a line drawn across it). Clients with no traffic in the range are left out, since
+ * a line along the floor says nothing.
+ */
+export function buildChartData(h: TrafficHistory, range: TrafficRange): ChartData {
+	const times = h.clients.flatMap((c) => c.samples.map(sampleTime));
+	const { x, domain, step, pointOf } = layout(range, h.step_seconds, h.until, times);
 	const clients: ClientBuckets[] = [];
 	h.clients.forEach((c, i) => {
 		const received = new Array<number>(x.length).fill(0);
 		const sent = new Array<number>(x.length).fill(0);
 		let moved = false;
 		for (const s of c.samples) {
-			const j = pointOf(Date.parse(s.bucket_start) / 1000);
+			const j = pointOf(sampleTime(s));
 			if (j === undefined) continue;
 			received[j] += s.receive_bytes;
 			sent[j] += s.send_bytes;
@@ -195,7 +184,37 @@ export function buildChartData(h: TrafficHistory, range: TrafficRange): ChartDat
 		}
 		if (moved) clients.push({ id: c.id, name: c.name, color: clientColor(i), received, sent });
 	});
-	return { x, domain: [start, end], step, clients };
+	return { x, domain, step, clients };
+}
+
+/** One series (a client's, or every client's summed) laid out the same way. */
+export interface SeriesData {
+	x: number[];
+	domain: [number, number];
+	step: number;
+	/** Bytes the server received in each point (the API's `receive_bytes`). */
+	received: number[];
+	/** Bytes the server sent in each point (`send_bytes`). */
+	sent: number[];
+}
+
+/** Lays one series out for a throughput chart: the dashboard's total, or a client's own. */
+export function buildSeriesData(w: TrafficSeries, range: TrafficRange): SeriesData {
+	const { x, domain, step, pointOf } = layout(
+		range,
+		w.step_seconds,
+		w.until,
+		w.samples.map(sampleTime)
+	);
+	const received = new Array<number>(x.length).fill(0);
+	const sent = new Array<number>(x.length).fill(0);
+	for (const s of w.samples) {
+		const j = pointOf(sampleTime(s));
+		if (j === undefined) continue;
+		received[j] += s.receive_bytes;
+		sent[j] += s.send_bytes;
+	}
+	return { x, domain, step, received, sent };
 }
 
 /** Converts bytes per bucket to bits per second. */
@@ -224,4 +243,23 @@ export function chartSeries(
 		color: c.color,
 		values: kind === 'rate' ? toRates(c[direction], data.step) : toCumulative(c[direction])
 	}));
+}
+
+/** Received is green and sent is rose, on every throughput chart. */
+export const receivedColor = '#10b981';
+export const sentColor = '#e11d48';
+
+/**
+ * The two lines of a throughput chart, as rates or as running totals: what the server received
+ * and what it sent. When nothing moved in the range there are none, so the chart says so instead
+ * of drawing two lines along the floor.
+ */
+export function throughputSeries(d: SeriesData, kind: 'rate' | 'cumulative'): ChartSeries[] {
+	if (!d.received.some((v) => v > 0) && !d.sent.some((v) => v > 0)) return [];
+	const values = (bytes: number[]) =>
+		kind === 'rate' ? toRates(bytes, d.step) : toCumulative(bytes);
+	return [
+		{ id: 'received', name: 'Received', color: receivedColor, values: values(d.received) },
+		{ id: 'sent', name: 'Sent', color: sentColor, values: values(d.sent) }
+	];
 }

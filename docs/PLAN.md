@@ -539,11 +539,12 @@ The monitor polls `wgctrl` every 5 s, which costs very little.
 table, sampler, and rollup/retention job are also built (2026-09-28:
 `internal/service/traffic.go`, `internal/store/traffic.go`), along with the API routes that read
 both it and a client's session history (§8: `GET /api/clients/{id}/traffic`, `GET /api/traffic`,
-`GET /api/clients/{id}/sessions`). The dashboard's total-throughput chart and the client-detail
-page's traffic chart and session-history list are built too (uPlot, per §9), with a range
-control (1m/1h/12h/24h/7d/30d/90d) on each. A Charts page (an icon in the header, between
-Clients and Server Settings) shows the same history per client, as Received, Sent, Cumulative
-Received, and Cumulative Sent charts (`GET /api/traffic/clients`). The log viewer's CSV export,
+`GET /api/clients/{id}/sessions`). The dashboard's total-throughput chart, the client-detail
+page's throughput and cumulative charts, and its session-history list are built too (uPlot, per
+§9). Every chart has the same range control (1m/1h/12h/24h/7d/30d/90d), and the choice is one for
+the whole app, remembered in the browser. A Charts page (an icon in the header, between Clients
+and Server Settings) shows the same history per client, as Received, Sent, Cumulative Received,
+and Cumulative Sent charts, stacked (`GET /api/traffic/clients`). The log viewer's CSV export,
 structured journald fields, and AdGuard Home integration (§6.3) are still pending.*
 
 ```mermaid
@@ -595,6 +596,19 @@ stateDiagram-v2
     90 days one day), counted back from `until`, because a day of minutes is 1,440 points in a few
     hundred pixels and blurs into a solid band. Lines are monotone splines, so a quiet stretch
     dips to zero without overshooting it.
+  - **The dashboard and a client's page** chart the total, or the client's own, as Beszel's
+    bandwidth chart does: a Received line and a Sent line as bit rates, and a tooltip that follows
+    the cursor with both and their total. A client's page adds a cumulative chart of the same two
+    lines as running totals. `GET /api/traffic` and `GET /api/clients/{id}/traffic` return the
+    same window as the per-client route: `step_seconds`, `until`, and `samples`.
+  - **The x axis** is labeled by range: every 15 s for 1m (to the second), every 5 min for 1h,
+    every hour for 12h, every 3 h for 24h, every day for 1w, every 3 days for 30d, and every week
+    for 90d. Under a week it shows times only, from a week up dates only, and never a year. The
+    hours and days are on the browser's local clock and calendar, and a label is dropped when it
+    wouldn't fit (a phone).
+  - **Times in the UI** are on a 24-hour clock (`18:24`, and `18:24:05` where seconds matter) and
+    dates are a day and an English month (`9 Sep`), written out by `web/src/lib/format.ts` and not
+    left to the browser's locale. A year is added only to a date in another year than this one.
 - **Low write volume:** samples are buffered in memory and flushed once per raw interval in one
   transaction, and a periodic job rolls old raw rows up into hourly ones, then prunes both past
   their retention windows. This keeps SD card writes low (and stays low on an SSD too, unless the
@@ -815,8 +829,8 @@ can be added later (i18n).
 | **Login** | Username, password, and TOTP code |
 | **Dashboard** | Server card (up/down, endpoint, public key, port, addresses), client counts (total / online / paused / outdated), client list sortable by name or status (each connected client's endpoint address, session and total traffic), total throughput chart, recent events, diagnostics warnings |
 | **Clients** | Searchable, filterable list, sortable by name, status, last handshake, or IP address: status dot, name, addresses, last handshake, endpoint, RX/TX, pause toggle, and quick actions (QR, download, edit, delete) |
-| **Client detail** | Overview, config and QR, edit form (with an "Advanced" section), traffic chart, session history, recent DNS queries (from AdGuard Home), events, danger zone (rotate keys, delete) |
-| **Charts** | Received, Sent, Cumulative Received, and Cumulative Sent charts with a line per client, a range control, a legend, and a tooltip that follows the cursor (§6.4) |
+| **Client detail** | Overview, config and QR, throughput and cumulative charts, session history, recent DNS queries (from AdGuard Home), and events. Pause (or Resume), Rename, and Delete are buttons at the top: Rename opens a dialog like Add Client's, and Delete asks to confirm in one. An "Advanced" edit section and rotating keys are planned. |
+| **Charts** | Received, Sent, Cumulative Received, and Cumulative Sent charts, stacked at the dashboard chart's width, with a line per client, a range control, a legend, and a tooltip that follows the cursor (§6.4) |
 | **Server settings** | The sections from §6.2, each marked with its impact |
 | **DNS** | Presets and custom resolvers, search domains, AdGuard Home connection (address, account, test button, sync status) |
 | **Logs** | Events table with filters and CSV export, plus an audit tab |

@@ -569,44 +569,49 @@ func TestTrafficAndSessionHistoryEndpoints(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	var samples []views.TrafficSampleView
-	b.expect(http.StatusOK, "GET", path+"/traffic", nil).decode(t, &samples)
-	if len(samples) != 2 || samples[0].ReceiveBytes != 100 || samples[1].SendBytes != 75 {
-		t.Fatalf("client traffic %+v", samples)
+	var series views.TrafficSamplesView
+	b.expect(http.StatusOK, "GET", path+"/traffic", nil).decode(t, &series)
+	if samples := series.Samples; len(samples) != 2 || samples[0].ReceiveBytes != 100 || samples[1].SendBytes != 75 {
+		t.Fatalf("client traffic %+v", series)
 	}
-	b.expect(http.StatusOK, "GET", path+"/traffic?range=24h", nil).decode(t, &samples)
-	if len(samples) != 2 {
-		t.Fatalf("client traffic range=24h %+v", samples)
+	// The window travels with the samples: a minute a sample for the default 24h range, ending
+	// just behind now.
+	if series.StepSeconds != 60 || series.Until.After(time.Now()) || time.Since(series.Until) > 2*time.Minute {
+		t.Fatalf("client traffic window: step %v, until %v", series.StepSeconds, series.Until)
+	}
+	b.expect(http.StatusOK, "GET", path+"/traffic?range=24h", nil).decode(t, &series)
+	if len(series.Samples) != 2 {
+		t.Fatalf("client traffic range=24h %+v", series)
 	}
 	// The seeded samples are two hours old: inside 12h, outside 1h. Nothing has polled yet, so
 	// the 1 minute range, which is served from memory, is empty rather than an error.
-	b.expect(http.StatusOK, "GET", path+"/traffic?range=12h", nil).decode(t, &samples)
-	if len(samples) != 2 {
-		t.Fatalf("client traffic range=12h %+v", samples)
+	b.expect(http.StatusOK, "GET", path+"/traffic?range=12h", nil).decode(t, &series)
+	if len(series.Samples) != 2 {
+		t.Fatalf("client traffic range=12h %+v", series)
 	}
-	b.expect(http.StatusOK, "GET", path+"/traffic?range=1h", nil).decode(t, &samples)
-	if len(samples) != 0 {
-		t.Fatalf("client traffic range=1h %+v, want none", samples)
+	b.expect(http.StatusOK, "GET", path+"/traffic?range=1h", nil).decode(t, &series)
+	if len(series.Samples) != 0 {
+		t.Fatalf("client traffic range=1h %+v, want none", series)
 	}
-	b.expect(http.StatusOK, "GET", path+"/traffic?range=1m", nil).decode(t, &samples)
-	if len(samples) != 0 {
-		t.Fatalf("client traffic range=1m %+v, want none", samples)
+	b.expect(http.StatusOK, "GET", path+"/traffic?range=1m", nil).decode(t, &series)
+	if len(series.Samples) != 0 || series.StepSeconds != 5 {
+		t.Fatalf("client traffic range=1m %+v, want none, 5 s wide", series)
 	}
-	b.expect(http.StatusOK, "GET", path+"/traffic?range=30d", nil).decode(t, &samples)
-	if len(samples) == 0 {
-		t.Fatal("client traffic range=30d is empty, want the seeded hour")
+	b.expect(http.StatusOK, "GET", path+"/traffic?range=30d", nil).decode(t, &series)
+	if len(series.Samples) == 0 || series.StepSeconds != 3600 {
+		t.Fatalf("client traffic range=30d %+v, want the seeded hour, an hour wide", series)
 	}
 	b.expect(http.StatusBadRequest, "GET", path+"/traffic?range=30m", nil)
 	b.expect(http.StatusNotFound, "GET", "/api/clients/no-such-id/traffic", nil)
 	b.expect(http.StatusNotFound, "GET", "/api/clients/no-such-id/traffic?range=1m", nil)
 
-	var total []views.TrafficSampleView
+	var total views.TrafficSamplesView
 	b.expect(http.StatusOK, "GET", "/api/traffic", nil).decode(t, &total)
-	if len(total) != 2 || total[0].ReceiveBytes != 100 {
+	if len(total.Samples) != 2 || total.Samples[0].ReceiveBytes != 100 || total.StepSeconds != 60 {
 		t.Fatalf("total traffic %+v", total)
 	}
 	b.expect(http.StatusOK, "GET", "/api/traffic?range=1m", nil).decode(t, &total)
-	if len(total) != 0 {
+	if len(total.Samples) != 0 || total.StepSeconds != 5 {
 		t.Fatalf("total traffic range=1m %+v, want none", total)
 	}
 	b.expect(http.StatusBadRequest, "GET", "/api/traffic?range=30m", nil)

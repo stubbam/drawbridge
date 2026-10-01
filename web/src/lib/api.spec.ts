@@ -77,6 +77,8 @@ describe('api', () => {
 		await api.clientTraffic('c1');
 		await api.clientTraffic('c1', '90d');
 		await api.clientTraffic('c1', '1m');
+		await api.trafficByClient();
+		await api.trafficByClient('12h');
 		await api.clientSessions('c1');
 		await api.clientSessions('c1', '2026-09-28T00:00:00Z', 10);
 		expect(fetchFn.mock.calls.map((c) => (c as unknown[])[0])).toEqual([
@@ -85,6 +87,8 @@ describe('api', () => {
 			'/api/clients/c1/traffic?range=24h',
 			'/api/clients/c1/traffic?range=90d',
 			'/api/clients/c1/traffic?range=1m',
+			'/api/traffic/clients?range=24h',
+			'/api/traffic/clients?range=12h',
 			'/api/clients/c1/sessions',
 			'/api/clients/c1/sessions?before=2026-09-28T00%3A00%3A00Z&limit=10'
 		]);

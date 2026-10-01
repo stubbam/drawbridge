@@ -9,7 +9,9 @@ import {
 	eventDetails,
 	eventLabel,
 	formatAgo,
-	formatBytes
+	formatBitrate,
+	formatBytes,
+	formatChartTime
 } from './format';
 
 const now = Date.parse('2026-09-26T12:00:00Z');
@@ -120,5 +122,34 @@ describe('describeUserAgent', () => {
 		expect(describeUserAgent(edgeMac)).toBe('Edge on macOS');
 		expect(describeUserAgent('curl/8.5.0')).toBe('curl');
 		expect(describeUserAgent('')).toBe('Unknown browser');
+	});
+});
+
+describe('formatBitrate', () => {
+	it('uses decimal bit units with three significant digits', () => {
+		expect(formatBitrate(0)).toBe('0 bps');
+		expect(formatBitrate(272)).toBe('272 bps');
+		expect(formatBitrate(999)).toBe('999 bps');
+		expect(formatBitrate(1000)).toBe('1 Kbps');
+		expect(formatBitrate(62390)).toBe('62.4 Kbps');
+		expect(formatBitrate(156100)).toBe('156 Kbps');
+		expect(formatBitrate(1_200_000)).toBe('1.2 Mbps');
+		expect(formatBitrate(3_710_000)).toBe('3.71 Mbps');
+		expect(formatBitrate(4_800_000_000)).toBe('4.8 Gbps');
+		expect(formatBitrate(2.5e12)).toBe('2.5 Tbps');
+		expect(formatBitrate(5e15)).toBe('5000 Tbps');
+	});
+});
+
+describe('formatChartTime', () => {
+	it('shows the date and the time, with seconds only when asked', () => {
+		const sec = Date.parse('2026-09-30T18:24:05Z') / 1000;
+		const plain = formatChartTime(sec);
+		const withSeconds = formatChartTime(sec, true);
+		expect(plain).toMatch(/Sep|30/);
+		// The same minute, and the seconds are the only difference.
+		expect(withSeconds.length).toBeGreaterThan(plain.length);
+		expect(withSeconds).toMatch(/:05\b/);
+		expect(plain).not.toMatch(/:05\b/);
 	});
 });

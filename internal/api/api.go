@@ -70,6 +70,7 @@ var routes = []route{
 	{"GET", "/api/clients/{id}/traffic", false, (*handler).clientTraffic},
 	{"GET", "/api/clients/{id}/sessions", false, (*handler).clientSessions},
 	{"GET", "/api/traffic", false, (*handler).totalTraffic},
+	{"GET", "/api/traffic/clients", false, (*handler).clientsTraffic},
 	{"GET", "/api/events", false, (*handler).events},
 }
 

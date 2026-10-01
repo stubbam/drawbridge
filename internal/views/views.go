@@ -396,6 +396,36 @@ func TrafficSamples(ss []store.TrafficSample) []TrafficSampleView {
 	return out
 }
 
+// ClientTrafficView is one client's samples in a TrafficHistoryView.
+type ClientTrafficView struct {
+	ID      string              `json:"id"`
+	Name    string              `json:"name"`
+	Samples []TrafficSampleView `json:"samples"`
+}
+
+// TrafficHistoryView is every client's traffic over one chart range
+// (GET /api/traffic/clients, docs/PLAN.md §6.4, §8).
+type TrafficHistoryView struct {
+	// StepSeconds is how long one sample covers; a sample's bytes over it is a rate.
+	StepSeconds float64 `json:"step_seconds"`
+	// Until is where the history ends: every sample is complete and ends at or before it.
+	Until   time.Time           `json:"until"`
+	Clients []ClientTrafficView `json:"clients"`
+}
+
+// NewTrafficHistory converts the service's history. Every client is in it, by name.
+func NewTrafficHistory(h service.TrafficHistory) TrafficHistoryView {
+	v := TrafficHistoryView{
+		StepSeconds: h.Step.Seconds(),
+		Until:       h.Until,
+		Clients:     make([]ClientTrafficView, len(h.Series)),
+	}
+	for i, s := range h.Series {
+		v.Clients[i] = ClientTrafficView{ID: s.Client.ID, Name: s.Client.Name, Samples: TrafficSamples(s.Samples)}
+	}
+	return v
+}
+
 // ClientSessionView is one of a client's past or current connections.
 type ClientSessionView struct {
 	ID        string    `json:"id"`

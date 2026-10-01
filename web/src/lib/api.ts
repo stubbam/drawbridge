@@ -163,6 +163,24 @@ export interface TrafficSample {
 	send_bytes: number;
 }
 
+/** One client's samples in a TrafficHistory. */
+export interface ClientTrafficSeries {
+	id: string;
+	name: string;
+	/** Oldest first. A stored bucket in which the client moved nothing isn't saved: it's zero. */
+	samples: TrafficSample[];
+}
+
+/** Every client's traffic over a range, for the charts page. */
+export interface TrafficHistory {
+	/** How long one sample covers, so a sample's bytes over it is a rate. */
+	step_seconds: number;
+	/** Where the history ends: every sample is complete, and ends at or before it. */
+	until: string;
+	/** Every client, sorted by name. */
+	clients: ClientTrafficSeries[];
+}
+
 export interface ClientSession {
 	id: string;
 	started_at: string;
@@ -272,6 +290,9 @@ export const api = {
 	/** Every client's traffic history, summed: the dashboard's total-throughput chart. */
 	traffic: (range: TrafficRange = '24h') =>
 		request<TrafficSample[]>('GET', '/api/traffic?range=' + range),
+	/** Every client's traffic history, one series per client: the charts page. */
+	trafficByClient: (range: TrafficRange = '24h') =>
+		request<TrafficHistory>('GET', '/api/traffic/clients?range=' + range),
 	/** One client's traffic history. */
 	clientTraffic: (id: string, range: TrafficRange = '24h') =>
 		request<TrafficSample[]>('GET', clientPath(id, '/traffic?range=' + range)),

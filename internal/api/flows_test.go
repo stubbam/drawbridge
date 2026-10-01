@@ -611,6 +611,23 @@ func TestTrafficAndSessionHistoryEndpoints(t *testing.T) {
 	}
 	b.expect(http.StatusBadRequest, "GET", "/api/traffic?range=30m", nil)
 
+	// One series per client, for the charts page.
+	var history views.TrafficHistoryView
+	b.expect(http.StatusOK, "GET", "/api/traffic/clients?range=12h", nil).decode(t, &history)
+	if history.StepSeconds != 60 || len(history.Clients) != 1 || history.Clients[0].ID != id ||
+		len(history.Clients[0].Samples) != 2 || history.Clients[0].Samples[1].ReceiveBytes != 200 {
+		t.Fatalf("traffic by client %+v", history)
+	}
+	if history.Until.After(time.Now()) || time.Since(history.Until) > time.Minute+time.Minute {
+		t.Fatalf("until %v is not just behind now", history.Until)
+	}
+	// 1m is the live range: nothing has polled yet, so the client is there with no samples.
+	b.expect(http.StatusOK, "GET", "/api/traffic/clients?range=1m", nil).decode(t, &history)
+	if history.StepSeconds != 5 || len(history.Clients) != 1 || history.Clients[0].ID != id || len(history.Clients[0].Samples) != 0 {
+		t.Fatalf("live traffic by client %+v", history)
+	}
+	b.expect(http.StatusBadRequest, "GET", "/api/traffic/clients?range=30m", nil)
+
 	var sessions []views.ClientSessionView
 	b.expect(http.StatusOK, "GET", path+"/sessions", nil).decode(t, &sessions)
 	if len(sessions) != 1 || sessions[0].EndedAt != nil || sessions[0].Endpoint != "203.0.113.5:51820" {

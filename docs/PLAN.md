@@ -541,8 +541,10 @@ table, sampler, and rollup/retention job are also built (2026-09-28:
 both it and a client's session history (§8: `GET /api/clients/{id}/traffic`, `GET /api/traffic`,
 `GET /api/clients/{id}/sessions`). The dashboard's total-throughput chart and the client-detail
 page's traffic chart and session-history list are built too (uPlot, per §9), with a range
-control (1m/1h/12h/24h/7d/30d/90d) on each. The log viewer's CSV export, structured journald
-fields, and AdGuard Home integration (§6.3) are still pending.*
+control (1m/1h/12h/24h/7d/30d/90d) on each. A Charts page (an icon in the header, between
+Clients and Server Settings) shows the same history per client, as Received, Sent, Cumulative
+Received, and Cumulative Sent charts (`GET /api/traffic/clients`). The log viewer's CSV export,
+structured journald fields, and AdGuard Home integration (§6.3) are still pending.*
 
 ```mermaid
 stateDiagram-v2
@@ -579,6 +581,20 @@ stateDiagram-v2
     so a restart starts it empty and it fills back in within a minute. The UI refetches it every
     5 s, and every other range every 60 s. 1h, 12h, and 24h read the raw buckets; 7d, 30d, and
     90d read the hourly rollup, which the 90-day retention covers.
+  - **The Charts page** draws one line per client (Beszel's network charts, with a client where it
+    has an interface), and leaves out a client that moved nothing in the range. Received and
+    Sent are the server's, as everywhere else in Drawbridge: the bytes it received from the client
+    (`receive_bytes`) and the bytes it sent the client (`send_bytes`), as bit rates, where Beszel
+    says Download and Upload. The two cumulative charts are running totals of those bytes from
+    the start of the range, which is the closest thing to Beszel's interface counters that
+    survives a reset. `GET /api/traffic/clients` returns every
+    client's samples, plus `step_seconds` (what a sample covers, so bytes become a rate) and
+    `until`. It leaves out a bucket until it has ended and the poll after it has saved it, so a
+    bucket that's still filling or isn't written yet is never drawn as a drop to zero. The page
+    averages a stored range into about 144 points (a day becomes ten minutes, a week two hours,
+    90 days one day), counted back from `until`, because a day of minutes is 1,440 points in a few
+    hundred pixels and blurs into a solid band. Lines are monotone splines, so a quiet stretch
+    dips to zero without overshooting it.
 - **Low write volume:** samples are buffered in memory and flushed once per raw interval in one
   transaction, and a periodic job rolls old raw rows up into hourly ones, then prunes both past
   their retention windows. This keeps SD card writes low (and stays low on an SSD too, unless the
@@ -767,6 +783,7 @@ GET    /api/events?client=&category=&before=&limit=
 
 GET    /api/clients/{id}/traffic?range=1m|1h|12h|24h|7d|30d|90d            (M4)
 GET    /api/traffic?range=1m|1h|12h|24h|7d|30d|90d   summed across clients (M4)
+GET    /api/traffic/clients?range=1m|1h|12h|24h|7d|30d|90d   one series per client (M4)
 GET    /api/clients/{id}/sessions?before=&limit=                           (M4)
 
 Later:
@@ -799,6 +816,7 @@ can be added later (i18n).
 | **Dashboard** | Server card (up/down, endpoint, public key, port, addresses), client counts (total / online / paused / outdated), client list sortable by name or status (each connected client's endpoint address, session and total traffic), total throughput chart, recent events, diagnostics warnings |
 | **Clients** | Searchable, filterable list, sortable by name, status, last handshake, or IP address: status dot, name, addresses, last handshake, endpoint, RX/TX, pause toggle, and quick actions (QR, download, edit, delete) |
 | **Client detail** | Overview, config and QR, edit form (with an "Advanced" section), traffic chart, session history, recent DNS queries (from AdGuard Home), events, danger zone (rotate keys, delete) |
+| **Charts** | Received, Sent, Cumulative Received, and Cumulative Sent charts with a line per client, a range control, a legend, and a tooltip that follows the cursor (§6.4) |
 | **Server settings** | The sections from §6.2, each marked with its impact |
 | **DNS** | Presets and custom resolvers, search domains, AdGuard Home connection (address, account, test button, sync status) |
 | **Logs** | Events table with filters and CSV export, plus an audit tab |

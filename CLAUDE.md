@@ -32,8 +32,10 @@ setups.** What exists:
   the uPlot charts and session-history list that use them, on the dashboard and a client's
   detail page. The charts' ranges run from 1 minute to 90 days; the 1-minute range is served
   from the last two minutes of 5 s polls kept in memory (never written to the database), because
-  the stored buckets are a minute wide. Also ahead of the rest of M4 (the log viewer's CSV export,
-  structured journald fields, and AdGuard Home sync aren't built yet).
+  the stored buckets are a minute wide. A Charts page (the chart-line icon in the header, from
+  `GET /api/traffic/clients`) draws Received, Sent, and cumulative charts with a line per
+  client. Also ahead of the rest of M4 (the log viewer's CSV export, structured journald fields,
+  and AdGuard Home sync aren't built yet).
 - The CLI, which talks to the daemon over the control socket: `server show|set`,
   `client list|add|show|pause|resume|rename|delete|config|qr`, `events`, `doctor`, and
   `admin setup-token|create|reset-password`.

@@ -88,6 +88,7 @@ func serve(ctx context.Context, args []string, stderr io.Writer) int {
 	defer closeSvc()
 	svc.TrafficRawInterval = *trafficRawInterval
 	svc.TrafficRawRetention = *trafficRawRetention
+	svc.TrackInterval = *sessionInterval
 	svc.TrafficHourlyRetention = *trafficHourlyRetention
 
 	if *tlsDir == "" {

@@ -294,6 +294,20 @@ func (h *handler) clientTraffic(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, views.TrafficSamples(samples))
 }
 
+func (h *handler) clientsTraffic(w http.ResponseWriter, r *http.Request) {
+	resolution, lookback, err := views.ParseTrafficRange(r.URL.Query().Get("range"))
+	if err != nil {
+		h.fail(w, err)
+		return
+	}
+	history, err := h.svc.ClientsTraffic(r.Context(), resolution, lookback)
+	if err != nil {
+		h.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, views.NewTrafficHistory(history))
+}
+
 func (h *handler) totalTraffic(w http.ResponseWriter, r *http.Request) {
 	resolution, lookback, err := views.ParseTrafficRange(r.URL.Query().Get("range"))
 	if err != nil {

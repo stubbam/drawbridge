@@ -128,8 +128,12 @@ func TestParseTrafficRange(t *testing.T) {
 		lookback   time.Duration
 	}{
 		{"", store.ResolutionRaw, 24 * time.Hour},
+		{"1m", service.ResolutionLive, time.Minute},
+		{"1h", store.ResolutionRaw, time.Hour},
+		{"12h", store.ResolutionRaw, 12 * time.Hour},
 		{"24h", store.ResolutionRaw, 24 * time.Hour},
 		{"7d", store.ResolutionHourly, 7 * 24 * time.Hour},
+		{"30d", store.ResolutionHourly, 30 * 24 * time.Hour},
 		{"90d", store.ResolutionHourly, 90 * 24 * time.Hour},
 	} {
 		resolution, lookback, err := ParseTrafficRange(c.in)
@@ -137,8 +141,14 @@ func TestParseTrafficRange(t *testing.T) {
 			t.Errorf("ParseTrafficRange(%q) = %q, %v, %v; want %q, %v", c.in, resolution, lookback, err, c.resolution, c.lookback)
 		}
 	}
-	if _, _, err := ParseTrafficRange("30m"); !model.IsInvalid(err) {
-		t.Errorf("range=30m: err %v, want an InvalidError", err)
+	for _, bad := range []string{"30m", "1w", "1M", "24H"} {
+		if _, _, err := ParseTrafficRange(bad); !model.IsInvalid(err) {
+			t.Errorf("range=%s: err %v, want an InvalidError", bad, err)
+		}
+	}
+	_, _, err := ParseTrafficRange("nope")
+	if want := `range must be one of 1m, 1h, 12h, 24h, 7d, 30d, 90d, not "nope"`; err == nil || err.Error() != want {
+		t.Errorf("error %v, want %q", err, want)
 	}
 }
 

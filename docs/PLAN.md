@@ -541,8 +541,8 @@ table, sampler, and rollup/retention job are also built (2026-09-28:
 both it and a client's session history (§8: `GET /api/clients/{id}/traffic`, `GET /api/traffic`,
 `GET /api/clients/{id}/sessions`). The dashboard's total-throughput chart and the client-detail
 page's traffic chart and session-history list are built too (uPlot, per §9), with a range
-control (24h/7d/90d) on each. The log viewer's CSV export, structured journald fields, and
-AdGuard Home integration (§6.3) are still pending.*
+control (1m/1h/12h/24h/7d/30d/90d) on each. The log viewer's CSV export, structured journald
+fields, and AdGuard Home integration (§6.3) are still pending.*
 
 ```mermaid
 stateDiagram-v2
@@ -572,6 +572,13 @@ stateDiagram-v2
     isn't always a minute.
   - Counter resets (a peer re-added or the interface recreated) are detected when a new counter
     value is lower than the previous one, the same way `client_sessions` already does it.
+  - **Chart ranges:** 1m, 1h, 12h, 24h, 7d, 30d, and 90d. The stored raw buckets are too coarse
+    for 1m (a minute wide by default, and the newest isn't flushed until its minute is over), so
+    1m is served from the last two minutes of 5 s polls, kept in memory only
+    (`Service.live`, `internal/service/traffic.go`). Nothing is written to the database for it,
+    so a restart starts it empty and it fills back in within a minute. The UI refetches it every
+    5 s, and every other range every 60 s. 1h, 12h, and 24h read the raw buckets; 7d, 30d, and
+    90d read the hourly rollup, which the 90-day retention covers.
 - **Low write volume:** samples are buffered in memory and flushed once per raw interval in one
   transaction, and a periodic job rolls old raw rows up into hourly ones, then prunes both past
   their retention windows. This keeps SD card writes low (and stays low on an SSD too, unless the
@@ -758,8 +765,8 @@ GET    /api/clients/{id}/config          text/plain; attachment
 
 GET    /api/events?client=&category=&before=&limit=
 
-GET    /api/clients/{id}/traffic?range=24h|7d|90d                          (M4)
-GET    /api/traffic?range=24h|7d|90d     summed across every client        (M4)
+GET    /api/clients/{id}/traffic?range=1m|1h|12h|24h|7d|30d|90d            (M4)
+GET    /api/traffic?range=1m|1h|12h|24h|7d|30d|90d   summed across clients (M4)
 GET    /api/clients/{id}/sessions?before=&limit=                           (M4)
 
 Later:

@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"net/netip"
 	"testing"
 	"time"
@@ -209,5 +210,158 @@ func TestTrafficRetentionRollsUpThenPrunes(t *testing.T) {
 	}
 	if !hourly[0].BucketStart.Equal(old) || hourly[0].RxBytes != 300 || hourly[0].TxBytes != 30 {
 		t.Fatalf("rolled-up hour: %+v, want 300/30 at %v", hourly[0], old)
+	}
+}
+
+// livePeers is a two-client fixture for the live samples: each set call is one poll's worth of
+// counters, and tick runs TrackConnections on them.
+type livePeers struct {
+	s    *Service
+	clk  *clock
+	ctx  context.Context
+	fake *wg.Fake
+}
+
+func (p livePeers) set(c ClientStatus, rx, tx int64) {
+	p.fake.SetHandshake("wg0", c.PublicKey, wg.Peer{
+		LastHandshake: p.clk.t, Endpoint: netip.MustParseAddrPort("203.0.113.5:51820"),
+		ReceiveBytes: rx, SendBytes: tx,
+	})
+}
+
+func (p livePeers) tick(after time.Duration) {
+	p.clk.advance(after)
+	p.s.TrackConnections(p.ctx)
+}
+
+func TestLiveTrafficHasASamplePerPollForAClientAndForTheTotal(t *testing.T) {
+	s, clk := newTestService(t)
+	ctx := context.Background()
+	for _, name := range []string{"phone", "laptop"} {
+		if _, _, err := s.AddClient(ctx, name); err != nil {
+			t.Fatal(err)
+		}
+	}
+	phone, _ := s.Client(ctx, store.ByName("phone"))
+	laptop, _ := s.Client(ctx, store.ByName("laptop"))
+	p := livePeers{s: s, clk: clk, ctx: ctx, fake: s.WG.(*wg.Fake)}
+	t0 := clk.t
+
+	p.set(phone, 1000, 500)
+	p.set(laptop, 0, 0)
+	p.tick(0) // the first observation baselines: nothing moved yet
+	p.set(phone, 1300, 650)
+	p.set(laptop, 40, 10)
+	p.tick(5 * time.Second)
+	p.set(phone, 1300, 650) // the phone is idle this poll
+	p.set(laptop, 100, 30)
+	p.tick(5 * time.Second)
+	p.set(phone, 10, 5) // the phone's counters went backward: re-added
+	p.set(laptop, 100, 30)
+	p.tick(5 * time.Second)
+	p.set(phone, 60, 25)
+	p.set(laptop, 100, 30)
+	p.tick(5 * time.Second)
+
+	type point struct {
+		at     time.Time
+		rx, tx int64
+	}
+	points := func(ss []store.TrafficSample, err error) []point {
+		t.Helper()
+		if err != nil {
+			t.Fatal(err)
+		}
+		var out []point
+		for _, sm := range ss {
+			out = append(out, point{sm.BucketStart, sm.RxBytes, sm.TxBytes})
+		}
+		return out
+	}
+	at := func(sec int) time.Time { return t0.Add(time.Duration(sec) * time.Second) }
+	check := func(what string, got, want []point) {
+		t.Helper()
+		if len(got) != len(want) {
+			t.Fatalf("%s: got %v, want %v", what, got, want)
+		}
+		for i := range want {
+			if !got[i].at.Equal(want[i].at) || got[i].rx != want[i].rx || got[i].tx != want[i].tx {
+				t.Fatalf("%s: got %v, want %v", what, got, want)
+			}
+		}
+	}
+
+	// One sample per poll, oldest first, and a poll in which the client moved nothing (or was
+	// only rebaselined) is a zero rather than a gap, so the chart doesn't draw a line across it.
+	check("phone", points(s.ClientTraffic(ctx, store.ByName("phone"), ResolutionLive, time.Minute)),
+		[]point{{at(0), 0, 0}, {at(5), 300, 150}, {at(10), 0, 0}, {at(15), 0, 0}, {at(20), 50, 20}})
+	check("laptop", points(s.ClientTraffic(ctx, store.ByName("laptop"), ResolutionLive, time.Minute)),
+		[]point{{at(0), 0, 0}, {at(5), 40, 10}, {at(10), 60, 20}, {at(15), 0, 0}, {at(20), 0, 0}})
+	check("total", points(s.TotalTraffic(ctx, ResolutionLive, time.Minute)),
+		[]point{{at(0), 0, 0}, {at(5), 340, 160}, {at(10), 60, 20}, {at(15), 0, 0}, {at(20), 50, 20}})
+
+	// The stored buckets are untouched by any of this: nothing was flushed yet.
+	if got, err := s.Store.TotalTraffic(ctx, store.ResolutionRaw, t0.Add(-time.Hour)); err != nil || len(got) != 0 {
+		t.Fatalf("stored raw buckets %v, err %v, want none: live samples never reach the database", got, err)
+	}
+
+	if _, err := s.ClientTraffic(ctx, store.ByName("no-such-client"), ResolutionLive, time.Minute); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("unknown client: err %v, want not found", err)
+	}
+}
+
+func TestLiveTrafficKeepsOnlyTheRecentPolls(t *testing.T) {
+	s, clk := newTestService(t)
+	ctx := context.Background()
+	if _, _, err := s.AddClient(ctx, "phone"); err != nil {
+		t.Fatal(err)
+	}
+	phone, _ := s.Client(ctx, store.ByName("phone"))
+	p := livePeers{s: s, clk: clk, ctx: ctx, fake: s.WG.(*wg.Fake)}
+
+	p.set(phone, 0, 0)
+	p.tick(0)
+	p.set(phone, 100, 50)
+	p.tick(5 * time.Second)
+
+	// The range is a window ending now: polls older than a minute are outside the 1 minute
+	// range, though they're still in memory.
+	p.set(phone, 200, 100)
+	p.tick(70 * time.Second)
+	got, err := s.ClientTraffic(ctx, store.ByName("phone"), ResolutionLive, time.Minute)
+	if err != nil || len(got) != 1 || got[0].RxBytes != 100 || got[0].TxBytes != 50 {
+		t.Fatalf("1 minute range: %+v, err %v, want only the newest poll (100/50)", got, err)
+	}
+	if n := len(s.live.ticks); n != 3 {
+		t.Fatalf("%d polls in memory, want 3 (all within %v)", n, liveRetention)
+	}
+
+	// Past the retention, old polls are dropped, so memory stays bounded however long it runs.
+	p.set(phone, 300, 150)
+	p.tick(liveRetention + time.Second)
+	if n := len(s.live.ticks); n != 1 {
+		t.Fatalf("%d polls in memory after %v, want only the newest", n, liveRetention)
+	}
+}
+
+func TestLiveTrafficIsSafeToReadWhileThePollerWrites(t *testing.T) {
+	var l liveTraffic
+	base := time.Date(2026, 9, 26, 12, 0, 0, 0, time.UTC)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for i := range 2000 {
+			l.add(liveTick{at: base.Add(time.Duration(i) * time.Second), clients: map[string]liveBytes{"c": {rx: 1, tx: 1}}})
+		}
+	}()
+	// The race detector (make test-go) is what fails this if the lock goes missing.
+	for {
+		select {
+		case <-done:
+			return
+		default:
+			_ = l.samples("", base)
+			_ = l.samples("c", base)
+		}
 	}
 }

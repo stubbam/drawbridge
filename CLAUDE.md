@@ -30,8 +30,10 @@ setups.** What exists:
   server-side; the API routes that read it and a client's session history
   (`GET /api/clients/{id}/traffic`, `GET /api/traffic`, `GET /api/clients/{id}/sessions`); and
   the uPlot charts and session-history list that use them, on the dashboard and a client's
-  detail page. Also ahead of the rest of M4 (the log viewer's CSV export, structured journald
-  fields, and AdGuard Home sync aren't built yet).
+  detail page. The charts' ranges run from 1 minute to 90 days; the 1-minute range is served
+  from the last two minutes of 5 s polls kept in memory (never written to the database), because
+  the stored buckets are a minute wide. Also ahead of the rest of M4 (the log viewer's CSV export,
+  structured journald fields, and AdGuard Home sync aren't built yet).
 - The CLI, which talks to the daemon over the control socket: `server show|set`,
   `client list|add|show|pause|resume|rename|delete|config|qr`, `events`, `doctor`, and
   `admin setup-token|create|reset-password`.

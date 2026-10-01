@@ -30,8 +30,19 @@ test('the dashboard shows a total-throughput chart with a working range control'
 	await expect(page.locator('.u-title')).toHaveCount(0);
 	expect(requestedRanges).toContain('24h');
 
-	await page.getByLabel('Range').selectOption('7d');
-	await expect.poll(() => requestedRanges.at(-1)).toBe('7d');
+	await expect(page.getByLabel('Range').locator('option')).toHaveText([
+		'1 Minute',
+		'1 Hour',
+		'12 Hours',
+		'24 Hours',
+		'1 Week',
+		'30 Days',
+		'90 Days'
+	]);
+	for (const range of ['1m', '1h', '12h', '7d', '30d', '90d']) {
+		await page.getByLabel('Range').selectOption(range);
+		await expect.poll(() => requestedRanges.at(-1)).toBe(range);
+	}
 	expect(problems).toEqual([]);
 });
 

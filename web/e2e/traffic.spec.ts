@@ -8,9 +8,7 @@ test.describe.configure({ mode: 'serial' });
 // The tooltip's heading: a day and month, then a 24-hour time. Never am or pm.
 const tooltipTime = /\b\d{1,2} [A-Z][a-z]{2} at \d{2}:\d{2}/;
 
-test('the dashboard shows a bandwidth chart with a working range control', async ({
-	page
-}) => {
+test('the dashboard shows a bandwidth chart with a working range control', async ({ page }) => {
 	const problems = watchConsole(page);
 	const requestedRanges = await mockTraffic(page);
 

@@ -337,3 +337,47 @@ checks of docs/PLAN.md §6.6. The daemon reads the host: the kernel's sysctls, i
 - `[UNVERIFIED]` An endpoint name whose AAAA record is a temporary address warns.
 - `[UNVERIFIED]` A host that keeps time with chrony or ntpd shows the clock warning even when the
   clock is right (a known limit, docs/REQUIREMENTS.md).
+
+## 9. Traffic history and the charts (an M4 slice, built ahead of the rest of it)
+
+The sampler (`Service.SampleTraffic`, docs/PLAN.md §6.4) adds up each client's bytes in memory and
+writes one "raw" row per client a minute, a daily job rolls old rows into hourly ones, and the 1
+minute range is read from the last two minutes of 5 s polls, kept in memory and never written to
+the database. Three places draw it, all with one range control that every chart shares: the
+dashboard, a client's page, and the Charts page (the header icon between Clients and Server
+Settings).
+
+- `[VERIFIED 2026-09-30]` The Charts page draws real clients' traffic: Received, Sent, Cumulative
+  Received, and Cumulative Sent, stacked at the dashboard chart's width, a line per client that
+  moved traffic, a legend, and a tooltip that follows the cursor.
+- `[VERIFIED 2026-09-30]` The 1 minute range draws real traffic, from the polls kept in memory.
+- `[VERIFIED 2026-09-30]` The dashboard's Total Throughput chart, and a client's own page, show
+  Received and Sent as bit rates with a Total in the tooltip, and a client's page adds a Cumulative
+  Traffic chart of the same two lines.
+- `[VERIFIED 2026-09-30]` On a client's page, Pause, Rename, and Delete are buttons at the top, and
+  Delete opens a confirmation that shows its title and message. This was `[FAILED 2026-09-30]`
+  first: the confirmation was blank except for its buttons. The page declares `color-scheme: light
+  dark`, so a dialog's built-in text color follows the operating system and not the app's own
+  mode, and with the system and the app on different schemes the text came out white on the
+  dialog's white background. A headless browser reproduces it when the system is dark and the app
+  is light, which the tests hadn't tried before.
+- `[VERIFIED 2026-09-30]` The y-axis labels aren't clipped on a client's Cumulative Traffic chart
+  at 12 hours. This was `[FAILED 2026-09-30]` first: the first digit of "4.0 GB" was cut off. The
+  axis was sized to the first of the longest label strings, which is the narrowest of them when
+  digits differ in width ("1.0 GB" against "4.0 GB"). A unit test with such digit widths shows
+  it, but the headless browser's font has equal-width digits and never did, so only a real
+  browser could. The axis is now sized to the widest measured label.
+- `[UNVERIFIED]` The x-axis labels on every range, on a real browser's clock: every 15 s (to the
+  second) for 1 minute, every 5 minutes for 1 hour, every hour for 12 hours, every 3 hours for 24
+  hours, every day for 1 week, every 3 days for 30 days, and every week for 90 days. Times are on
+  a 24-hour clock with no am or pm, dates are like `9 Sep`, and no range shows both a date and a
+  year. The tick positions and formats are unit-tested (a clock change included), and a headless
+  browser has drawn them.
+- `[UNVERIFIED]` The 1 week, 30 days, and 90 days ranges, which read the hourly rollup, agree with
+  the raw ranges for the same hours. The daily rollup job has to have run past the 48 hour raw
+  retention first, so this needs a few days of history.
+- `[UNVERIFIED]` After `sudo systemctl restart drawbridge`, the 1 minute range starts empty and
+  fills back in within a minute, while every other range keeps its history except the minute that
+  hadn't been written yet.
+- `[UNVERIFIED]` Renaming a connected client from its page (Rename opens a dialog) changes only
+  the name: the peer stays connected, and its config and keys are unchanged.

@@ -14,7 +14,7 @@
 	import { poll } from '$lib/poll';
 	import { chartRange } from '$lib/range.svelte';
 	import { sortClients, storedSort, storeSort, type SortKey } from '$lib/sort';
-	import { buildSeriesData, refreshMs, throughputSeries } from '$lib/traffic';
+	import { buildSeriesData, refreshMs, bandwidthSeries } from '$lib/traffic';
 	import CopyButton from '$lib/components/CopyButton.svelte';
 	import NetworkChart from '$lib/components/NetworkChart.svelte';
 	import RangeSelect from '$lib/components/RangeSelect.svelte';
@@ -28,7 +28,7 @@
 	let traffic = $state<TrafficSeries>();
 	// The range `traffic` holds, which lags the chosen range until the new range's data arrives.
 	let trafficShown = $state<TrafficRange>(chartRange.value);
-	let throughput = $derived(traffic ? buildSeriesData(traffic, trafficShown) : undefined);
+	let bandwidth = $derived(traffic ? buildSeriesData(traffic, trafficShown) : undefined);
 	let version = $state<VersionInfo>();
 	let error = $state('');
 	let now = $state(Date.now());
@@ -143,25 +143,25 @@
 	</section>
 {/if}
 
-<section class="card flex flex-col gap-3" aria-labelledby="throughput-heading">
+<section class="card flex flex-col gap-3" aria-labelledby="bandwidth-heading">
 	<div class="flex flex-wrap items-start justify-between gap-2">
 		<div>
-			<h2 id="throughput-heading" class="font-semibold">Total Throughput</h2>
+			<h2 id="bandwidth-heading" class="font-semibold">Bandwidth</h2>
 			<p class="text-sm text-neutral-500 dark:text-neutral-400">Network traffic of all clients</p>
 		</div>
 		<RangeSelect id="dashboard-range" />
 	</div>
 	<NetworkChart
-		x={throughput?.x ?? []}
-		series={throughput ? throughputSeries(throughput, 'rate') : []}
-		domain={throughput?.domain ?? [0, 0]}
-		step={throughput?.step ?? 0}
+		x={bandwidth?.x ?? []}
+		series={bandwidth ? bandwidthSeries(bandwidth, 'rate') : []}
+		domain={bandwidth?.domain ?? [0, 0]}
+		step={bandwidth?.step ?? 0}
 		range={trafficShown}
 		format={formatBitrate}
-		label="Total Throughput"
+		label="Bandwidth"
 		total
 		legend={false}
-		empty={throughput ? 'No traffic in this range' : 'Loading…'}
+		empty={bandwidth ? 'No traffic in this range' : 'Loading…'}
 	/>
 </section>
 

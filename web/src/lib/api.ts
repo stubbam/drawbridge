@@ -297,7 +297,7 @@ export const api = {
 		return request<DrawbridgeEvent[]>('GET', '/api/events' + (qs ? '?' + qs : ''));
 	},
 
-	/** Every client's traffic history, summed: the dashboard's total-throughput chart. */
+	/** Every client's traffic history, summed: the dashboard's bandwidth chart. */
 	traffic: (range: TrafficRange = '24h') =>
 		request<TrafficSeries>('GET', '/api/traffic?range=' + range),
 	/** Every client's traffic history, one series per client: the charts page. */

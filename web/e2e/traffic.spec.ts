@@ -8,17 +8,15 @@ test.describe.configure({ mode: 'serial' });
 // The tooltip's heading: a day and month, then a 24-hour time. Never am or pm.
 const tooltipTime = /\b\d{1,2} [A-Z][a-z]{2} at \d{2}:\d{2}/;
 
-test('the dashboard shows a total-throughput chart with a working range control', async ({
-	page
-}) => {
+test('the dashboard shows a bandwidth chart with a working range control', async ({ page }) => {
 	const problems = watchConsole(page);
 	const requestedRanges = await mockTraffic(page);
 
 	await login(page);
-	const chart = page.getByRole('img', { name: 'Total Throughput chart' });
+	const chart = page.getByRole('img', { name: 'Bandwidth chart' });
 	await expect(chart).toBeVisible();
 	// The heading above the chart is the only label: the chart doesn't draw its own title.
-	await expect(page.getByText('Total Throughput', { exact: true })).toHaveCount(1);
+	await expect(page.getByText('Bandwidth', { exact: true })).toHaveCount(1);
 	await expect(page.locator('.u-title')).toHaveCount(0);
 	expect(requestedRanges).toContain('24h');
 
@@ -75,9 +73,9 @@ test('a client detail page has its own charts, session history, and Pause, Renam
 	await page.getByRole('button', { name: 'Add', exact: true }).click();
 	await expect(page.getByRole('heading', { name: 'Traffic Test Client' })).toBeVisible();
 
-	// The throughput chart and, below it, a cumulative one.
-	await expect(page.getByRole('img', { name: 'Total Throughput chart' })).toBeVisible();
-	await expect(page.getByRole('heading', { name: 'Total Throughput' })).toBeVisible();
+	// The Bandwidth chart and, below it, a cumulative one.
+	await expect(page.getByRole('img', { name: 'Bandwidth chart' })).toBeVisible();
+	await expect(page.getByRole('heading', { name: 'Bandwidth' })).toBeVisible();
 	await expect(page.getByRole('img', { name: 'Cumulative Traffic chart' })).toBeVisible();
 	await expect(page.getByRole('heading', { name: 'Cumulative Traffic' })).toBeVisible();
 	await expect(page.locator('.u-title')).toHaveCount(0);

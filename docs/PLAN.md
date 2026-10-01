@@ -539,8 +539,8 @@ The monitor polls `wgctrl` every 5 s, which costs very little.
 table, sampler, and rollup/retention job are also built (2026-09-28:
 `internal/service/traffic.go`, `internal/store/traffic.go`), along with the API routes that read
 both it and a client's session history (§8: `GET /api/clients/{id}/traffic`, `GET /api/traffic`,
-`GET /api/clients/{id}/sessions`). The dashboard's total-throughput chart, the client-detail
-page's throughput and cumulative charts, and its session-history list are built too (uPlot, per
+`GET /api/clients/{id}/sessions`). The dashboard's bandwidth chart, the client-detail
+page's bandwidth and cumulative charts, and its session-history list are built too (uPlot, per
 §9). Every chart has the same range control (1m/1h/12h/24h/7d/30d/90d), and the choice is one for
 the whole app, remembered in the browser. A Charts page (an icon in the header, between Clients
 and Server Settings) shows the same history per client, as Received, Sent, Cumulative Received,
@@ -827,9 +827,9 @@ can be added later (i18n).
 |---|---|
 | **Setup wizard** | Setup token → admin account → endpoint FQDN → DNS (with a check of the host's resolver) → done. A subnets step (IPv4/IPv6) is planned. |
 | **Login** | Username, password, and TOTP code |
-| **Dashboard** | Server card (up/down, endpoint, public key, port, addresses), client counts (total / online / paused / outdated), client list sortable by name or status (each connected client's endpoint address, session and total traffic), total throughput chart, recent events, diagnostics warnings |
+| **Dashboard** | Server card (up/down, endpoint, public key, port, addresses), client counts (total / online / paused / outdated), client list sortable by name or status (each connected client's endpoint address, session and total traffic), bandwidth chart, recent events, diagnostics warnings |
 | **Clients** | Searchable, filterable list, sortable by name, status, last handshake, or IP address: status dot, name, addresses, last handshake, endpoint, RX/TX, pause toggle, and quick actions (QR, download, edit, delete) |
-| **Client detail** | Overview, config and QR, throughput and cumulative charts, session history, recent DNS queries (from AdGuard Home), and events. Pause (or Resume), Rename, and Delete are buttons at the top: Rename opens a dialog like Add Client's, and Delete asks to confirm in one. An "Advanced" edit section and rotating keys are planned. |
+| **Client detail** | Overview, config and QR, bandwidth and cumulative charts, session history, recent DNS queries (from AdGuard Home), and events. Pause (or Resume), Rename, and Delete are buttons at the top: Rename opens a dialog like Add Client's, and Delete asks to confirm in one. An "Advanced" edit section and rotating keys are planned. |
 | **Charts** | Received, Sent, Cumulative Received, and Cumulative Sent charts, stacked at the dashboard chart's width, with a line per client, a range control, a legend, and a tooltip that follows the cursor (§6.4) |
 | **Server settings** | The sections from §6.2, each marked with its impact |
 | **DNS** | Presets and custom resolvers, search domains, AdGuard Home connection (address, account, test button, sync status) |

@@ -32,7 +32,7 @@ test('the Charts icon sits between Clients and Server Settings and opens the Cha
 test('the charts are stacked, each as wide as the dashboard chart', async ({ page }) => {
 	await mockTraffic(page);
 	await login(page);
-	const dashboard = await page.getByRole('region', { name: 'Total Throughput' }).boundingBox();
+	const dashboard = await page.getByRole('region', { name: 'Bandwidth' }).boundingBox();
 
 	await navigate(page, 'Charts');
 	await expect(page.locator('.u-over')).toHaveCount(4);

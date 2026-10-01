@@ -198,7 +198,7 @@ export interface SeriesData {
 	sent: number[];
 }
 
-/** Lays one series out for a throughput chart: the dashboard's total, or a client's own. */
+/** Lays one series out for a bandwidth chart: the dashboard's total, or a client's own. */
 export function buildSeriesData(w: TrafficSeries, range: TrafficRange): SeriesData {
 	const { x, domain, step, pointOf } = layout(
 		range,
@@ -245,16 +245,16 @@ export function chartSeries(
 	}));
 }
 
-/** Received is green and sent is rose, on every throughput chart. */
+/** Received is green and sent is rose, on every bandwidth chart. */
 export const receivedColor = '#10b981';
 export const sentColor = '#e11d48';
 
 /**
- * The two lines of a throughput chart, as rates or as running totals: what the server received
+ * The two lines of a bandwidth chart, as rates or as running totals: what the server received
  * and what it sent. When nothing moved in the range there are none, so the chart says so instead
  * of drawing two lines along the floor.
  */
-export function throughputSeries(d: SeriesData, kind: 'rate' | 'cumulative'): ChartSeries[] {
+export function bandwidthSeries(d: SeriesData, kind: 'rate' | 'cumulative'): ChartSeries[] {
 	if (!d.received.some((v) => v > 0) && !d.sent.some((v) => v > 0)) return [];
 	const values = (bytes: number[]) =>
 		kind === 'rate' ? toRates(bytes, d.step) : toCumulative(bytes);

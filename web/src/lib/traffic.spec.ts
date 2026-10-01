@@ -11,7 +11,7 @@ import {
 	receivedColor,
 	refreshMs,
 	sentColor,
-	throughputSeries,
+	bandwidthSeries,
 	toCumulative,
 	toRates,
 	trafficRanges
@@ -320,11 +320,11 @@ describe('buildSeriesData', () => {
 		const d = buildSeriesData({ step_seconds: 3600, until, samples: [] }, '7d');
 		expect(d.x.length).toBe(84);
 		expect(d.received.every((v) => v === 0)).toBe(true);
-		expect(throughputSeries(d, 'rate')).toEqual([]);
+		expect(bandwidthSeries(d, 'rate')).toEqual([]);
 	});
 });
 
-describe('throughputSeries', () => {
+describe('bandwidthSeries', () => {
 	const data = {
 		x: [0, 600, 1200],
 		domain: [0, 1800] as [number, number],
@@ -334,7 +334,7 @@ describe('throughputSeries', () => {
 	};
 
 	it('has a received line and a sent line, as rates', () => {
-		const [received, sent] = throughputSeries(data, 'rate');
+		const [received, sent] = bandwidthSeries(data, 'rate');
 		expect(received).toMatchObject({ id: 'received', name: 'Received', color: receivedColor });
 		expect(sent).toMatchObject({ id: 'sent', name: 'Sent', color: sentColor });
 		// 75 KB over ten minutes is 1 Kbps, and 150 KB is 2 Kbps.
@@ -343,12 +343,12 @@ describe('throughputSeries', () => {
 	});
 
 	it('has them as running totals too', () => {
-		const [received, sent] = throughputSeries(data, 'cumulative');
+		const [received, sent] = bandwidthSeries(data, 'cumulative');
 		expect(received.values).toEqual([0, 75_000, 75_000]);
 		expect(sent.values).toEqual([150_000, 150_000, 225_000]);
 	});
 
 	it('draws nothing when nothing moved', () => {
-		expect(throughputSeries({ ...data, received: [0, 0, 0], sent: [0, 0, 0] }, 'rate')).toEqual([]);
+		expect(bandwidthSeries({ ...data, received: [0, 0, 0], sent: [0, 0, 0] }, 'rate')).toEqual([]);
 	});
 });

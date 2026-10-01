@@ -55,10 +55,11 @@
 	bind:this={dialog}
 	onclose={onClose}
 	onclick={onBackdropClick}
+	aria-labelledby="add-client-heading"
 	class="m-auto w-full max-w-sm rounded-xl border border-neutral-200 bg-white p-0 shadow-lg backdrop:bg-black/40 dark:border-neutral-800 dark:bg-neutral-900"
 >
 	<form class="flex flex-col gap-3 p-5" onsubmit={add}>
-		<h2 class="font-semibold">Add a Client</h2>
+		<h2 id="add-client-heading" class="font-semibold">Add a Client</h2>
 		<div>
 			<label class="label" for="add-client-name">Name</label>
 			<input

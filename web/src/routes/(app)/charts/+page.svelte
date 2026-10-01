@@ -70,6 +70,8 @@
 	] as const;
 </script>
 
+<svelte:head><title>Charts · Drawbridge</title></svelte:head>
+
 <div class="flex flex-wrap items-center justify-between gap-2">
 	<h1 class="text-2xl font-semibold tracking-tight">Charts</h1>
 	<RangeSelect id="charts-range" />

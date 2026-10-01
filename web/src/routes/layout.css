@@ -4,6 +4,16 @@
    inline script in app.html, instead of the media query alone. */
 @custom-variant dark (&:where(.dark, .dark *));
 
+@layer base {
+	/* A dialog's own text color is CanvasText, which follows the operating system: the page
+	   declares color-scheme: light dark, and the system can be dark while the app is light. That
+	   gave white text on a white dialog, so a title or a message with no color of its own vanished.
+	   Take the page's text color instead, which is the app's own, light or dark. */
+	dialog {
+		color: inherit;
+	}
+}
+
 /* Shared building blocks, so every page looks the same. */
 @layer components {
 	.card {

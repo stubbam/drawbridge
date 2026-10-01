@@ -106,6 +106,113 @@ test('clients: add, QR code, download, pause, rename, delete', async ({ page }) 
 	expect(problems).toEqual([]);
 });
 
+// The page declares `color-scheme: light dark`, so a <dialog>'s built-in text color follows the
+// operating system and not the app's own mode: a light app on a dark system once had white text
+// on a white dialog, so the titles and the delete confirmation vanished. Every combination must
+// stay readable.
+test('dialogs are readable in every combination of system scheme and app mode', async ({
+	page
+}) => {
+	const problems = watchConsole(page);
+	cli('client', 'add', 'Dialog Test');
+	await login(page);
+
+	/** WCAG contrast ratios of every title and paragraph in the dialog against its background. */
+	async function contrasts(dialog: Locator) {
+		return dialog.evaluate((el) => {
+			// Any CSS color (Tailwind's are oklch) to RGB, by painting it.
+			const rgb = (css: string) => {
+				const ctx = document.createElement('canvas').getContext('2d')!;
+				ctx.fillStyle = css;
+				ctx.fillRect(0, 0, 1, 1);
+				return [...ctx.getImageData(0, 0, 1, 1).data.slice(0, 3)];
+			};
+			const lum = (css: string) => {
+				const [r, g, b] = rgb(css).map((v) => {
+					const c = v / 255;
+					return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+				});
+				return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+			};
+			const bg = getComputedStyle(el).backgroundColor;
+			return [...el.querySelectorAll('h2, p')].map((t) => {
+				const fg = getComputedStyle(t).color;
+				const [hi, lo] = [lum(fg), lum(bg)].sort((a, b) => b - a);
+				return {
+					text: (t.textContent ?? '').trim().slice(0, 24),
+					ratio: (hi + 0.05) / (lo + 0.05)
+				};
+			});
+		});
+	}
+	async function expectReadable(dialog: Locator, what: string) {
+		await expect(dialog).toBeVisible();
+		const found = await contrasts(dialog);
+		expect(found.length, what).toBeGreaterThan(0);
+		for (const f of found) expect(f.ratio, `${what}: "${f.text}"`).toBeGreaterThan(4.5);
+	}
+
+	for (const [system, mode] of [
+		['dark', 'light'],
+		['light', 'dark']
+	] as const) {
+		const where = `${mode} app on a ${system} system`;
+		await page.emulateMedia({ colorScheme: system });
+		await page.evaluate((m) => localStorage.setItem('drawbridge-theme', m), mode);
+		await page.reload();
+		await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible();
+
+		await page.getByRole('button', { name: 'Add Client' }).click();
+		await expectReadable(page.getByRole('dialog', { name: 'Add a Client' }), `Add, ${where}`);
+		await page.keyboard.press('Escape');
+
+		await navigate(page, 'Clients');
+		await page.getByRole('link', { name: 'Dialog Test' }).click();
+		await page.getByRole('button', { name: 'Rename', exact: true }).click();
+		await expectReadable(page.getByRole('dialog', { name: 'Rename Client' }), `Rename, ${where}`);
+		await page.keyboard.press('Escape');
+
+		await page.getByRole('button', { name: 'Delete', exact: true }).click();
+		const confirm = page.getByRole('dialog', { name: 'Delete Client' });
+		await expectReadable(confirm, `Delete, ${where}`);
+		// The confirmation names the client, and says what deleting does.
+		await expect(confirm).toContainText('Delete Dialog Test?');
+		await expect(confirm).toContainText("can't be undone");
+		await page.keyboard.press('Escape');
+		await page.goto('/');
+	}
+
+	await navigate(page, 'Clients');
+	await page.getByRole('link', { name: 'Dialog Test' }).click();
+	await page.getByRole('button', { name: 'Delete', exact: true }).click();
+	await page
+		.getByRole('dialog', { name: 'Delete Client' })
+		.getByRole('button', { name: 'Delete', exact: true })
+		.click();
+	await expect(page).toHaveURL(/\/clients$/);
+	expect(problems).toEqual([]);
+});
+
+// A page that sets no title leaves the previous page's in the tab, so each header icon is
+// followed by the next: a missing title shows up as the one before it.
+test('every page in the header names itself in the browser tab', async ({ page }) => {
+	await login(page);
+	await expect(page).toHaveTitle('Dashboard · Drawbridge');
+	for (const [icon, title] of [
+		['Clients', 'Clients · Drawbridge'],
+		['Charts', 'Charts · Drawbridge'],
+		['Server Settings', 'Settings · Drawbridge'],
+		['Logs', 'Logs · Drawbridge'],
+		['Charts', 'Charts · Drawbridge'],
+		['Clients', 'Clients · Drawbridge']
+	]) {
+		await navigate(page, icon);
+		await expect(page, icon).toHaveTitle(title);
+	}
+	await page.getByRole('link', { name: 'Drawbridge' }).click();
+	await expect(page).toHaveTitle('Dashboard · Drawbridge');
+});
+
 test('the client list pauses and resumes, and finds clients', async ({ page }) => {
 	cli('client', 'add', 'laptop');
 	cli('client', 'add', 'tablet');

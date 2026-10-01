@@ -1,6 +1,7 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { TrafficRange } from './api';
-import { formatXTick, thin, xTicks } from './chart';
+import type uPlot from 'uplot';
+import { axisSize, formatXTick, thin, xTicks } from './chart';
 
 // Local times, so these read the same in any time zone.
 const local = (y: number, mo: number, d: number, h = 0, mi = 0, s = 0) =>
@@ -165,5 +166,41 @@ describe('thin', () => {
 		expect(thin([], 0, 60, 100, 70)).toEqual([]);
 		expect(thin([30], 0, 60, 100, 70)).toEqual([30]);
 		expect(thin([0, 15, 30], 0, 60, 0, 70)).toEqual([0, 15, 30]);
+	});
+});
+
+describe('axisSize', () => {
+	// The tests run in Node, which has no screen to have a pixel ratio.
+	beforeAll(() => vi.stubGlobal('devicePixelRatio', 1));
+	// A proportional font, where a "1" is narrower than the other digits: "1.0 GB" is as long a
+	// string as "4.0 GB" but not as wide.
+	const widthOf = (s: string) =>
+		[...s].reduce((n, ch) => n + (ch === '1' ? 4 : ch === ' ' ? 3 : 7), 0);
+	const axis = (labels: string[]) => {
+		const self = {
+			axes: [{ ticks: { size: 10 }, gap: 5, font: ['12px sans-serif'] }],
+			ctx: {
+				font: '',
+				save() {},
+				restore() {},
+				measureText: (s: string) => ({ width: widthOf(s) })
+			}
+		} as unknown as uPlot;
+		return axisSize(self, labels, 0);
+	};
+
+	it('fits the widest label, not the first of the longest strings', () => {
+		// "1.0 GB" comes first and is 35 wide; "4.0 GB" is 38. The axis has to fit the 38, or the 4
+		// loses its left edge.
+		expect(axis(['0 B', '1.0 GB', '2.0 GB', '3.0 GB', '4.0 GB'])).toBe(10 + 5 + 38);
+	});
+
+	it('fits a shorter string that is wider than a longer one', () => {
+		expect(axis(['1111111', '8.8'])).toBe(10 + 5 + widthOf('1111111'));
+		expect(axis(['11111', '8888'])).toBe(10 + 5 + widthOf('8888'));
+	});
+
+	it('is just the tick and the gap when there is nothing to label', () => {
+		expect(axis([])).toBe(15);
 	});
 });

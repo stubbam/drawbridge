@@ -5,21 +5,25 @@ import { formatClock, formatDay } from './format';
 /**
  * uPlot's default y-axis width is a fixed 50px, too narrow for a formatted byte string like
  * "150 MB" or "1.5 GB": it doesn't wrap or shrink the text, so it just clips. This is uPlot's own
- * documented recipe for sizing an axis to its longest label instead: measure it with the axis's
- * own font, so it always fits.
+ * documented recipe for sizing an axis to its labels instead: measure them with the axis's own
+ * font, so they always fit.
+ *
+ * It measures every label and takes the widest, not the longest string: digits aren't all the
+ * same width in a proportional font ("1.0 GB" is as long as "4.0 GB" but narrower), and sizing to
+ * the first of the longest strings clipped the left edge of the wider ones.
  */
-export const axisSize: uPlot.Axis.Size = (self, values, axisIdx) => {
+export function axisSize(self: uPlot, values: string[] | null, axisIdx: number): number {
 	const axis = self.axes[axisIdx];
 	let size = (axis.ticks?.size ?? 0) + (axis.gap ?? 0);
-	const longest = (values ?? []).reduce((a, b) => (b.length > a.length ? b : a), '');
-	if (longest && axis.font) {
+	if (values?.length && axis.font) {
 		self.ctx.save();
 		self.ctx.font = axis.font[0];
-		size += self.ctx.measureText(longest).width / devicePixelRatio;
+		const widest = Math.max(...values.map((v) => self.ctx.measureText(String(v ?? '')).width));
 		self.ctx.restore();
+		size += widest / (globalThis.devicePixelRatio || 1);
 	}
 	return Math.ceil(size);
-};
+}
 
 // What a label on the x axis says, which depends on how long the range is: a minute is read to
 // the second, up to a day to the minute, and a week or more to the day. No date on the short

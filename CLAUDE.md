@@ -39,8 +39,9 @@ setups.** What exists:
   choice covers every chart (`web/src/lib/range.svelte.ts`). The log viewer filters by category,
   event, client, and time, and exports the matching events as CSV. Under systemd every event is
   also a journal entry whose parts are fields (`DRAWBRIDGE_EVENT`, `DRAWBRIDGE_CLIENT`, and so
-  on; `internal/journal`). Also ahead of the rest of M4 (the SSE stream, the write-budget test,
-  and AdGuard Home sync aren't built yet).
+  on; `internal/journal`). A write-budget test keeps the database
+  within what an SD card can take. Also ahead of the rest of M4 (the SSE stream and AdGuard Home
+  sync aren't built yet).
 - The CLI, which talks to the daemon over the control socket: `server show|set`,
   `client list|add|show|pause|resume|rename|delete|config|qr`, `events`, `doctor`, and
   `admin setup-token|create|reset-password`.
@@ -285,9 +286,12 @@ These are the rules most likely to get silently broken.
   might run on a real host. The planned AdGuard Home integration (M4) reaches its API at
   `http://127.0.0.1:3000/control` by default; that address is a setting (`adguard.base_url`,
   §7), not hard-coded.
-- **Protect the SD card.** Monitoring samples are buffered in memory and flushed once per raw
-  interval (a minute by default) in one transaction. Nothing writes to the DB on every poll
-  (§6.4).
+- **Protect the SD card.** Monitoring samples, and the bytes of open sessions, are buffered in
+  memory and flushed once per raw interval (a minute by default) in one transaction. Nothing
+  writes to the DB on every poll (§6.4). `TestWriteBudget` simulates a day against a real
+  database and fails when the writes pass the budget, so a poll-time write shows up there; keep
+  new periodic work out of the poll, or in the flush. `make test-go` runs it without the race
+  detector, which makes it too slow.
 - **Secrets stay secret.** Private keys, PSKs, and the setup token are encrypted at rest (the
   `*_enc` columns) and never logged, except the setup token, which the journal shows until the
   admin account exists (§6.5). Session tokens are stored only as SHA-256 hashes. Views never

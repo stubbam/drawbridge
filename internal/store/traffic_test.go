@@ -310,3 +310,55 @@ func TestClientsTrafficHourlyFoldsInRawRowsOnce(t *testing.T) {
 		t.Fatalf("hourly %v, want the rolled-up hour (500/200) and the folded one (30/3)", pts)
 	}
 }
+
+func TestSaveMonitoringWritesTrafficAndSessionsTogether(t *testing.T) {
+	ctx := context.Background()
+	s := initialized(t)
+	c, err := s.AddClient(ctx, "phone")
+	if err != nil {
+		t.Fatal(err)
+	}
+	open, err := s.OpenClientSession(ctx, c.ID, "203.0.113.5:51820", 100, 50)
+	if err != nil {
+		t.Fatal(err)
+	}
+	closed, err := s.OpenClientSession(ctx, mustClient(t, s, "tablet"), "203.0.113.6:51820", 0, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.CloseClientSession(ctx, closed.ID, 7, 8); err != nil {
+		t.Fatal(err)
+	}
+
+	bucket := time.Date(2026, 9, 26, 12, 0, 0, 0, time.UTC)
+	err = s.SaveMonitoring(ctx,
+		[]TrafficSample{{ClientID: c.ID, Resolution: ResolutionRaw, BucketStart: bucket, RxBytes: 300, TxBytes: 150}},
+		[]SessionBytes{
+			{ID: open.ID, Endpoint: "203.0.113.9:51820", RxBytes: 300, TxBytes: 150},
+			// A session that has ended isn't reopened, or its bytes changed, by a late flush.
+			{ID: closed.ID, Endpoint: "198.51.100.1:1", RxBytes: 999, TxBytes: 999},
+		})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.ClientTraffic(ctx, c.ID, ResolutionRaw, bucket)
+	if err != nil || len(got) != 1 || got[0].RxBytes != 300 {
+		t.Fatalf("traffic %+v (err %v)", got, err)
+	}
+	current, err := s.CurrentClientSessions(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sess := current[c.ID]; sess.Endpoint != "203.0.113.9:51820" || sess.RxBytes != 300 || sess.TxBytes != 150 ||
+		sess.BaselineRx != 100 {
+		t.Fatalf("open session %+v", sess)
+	}
+	history, err := s.ClientSessions(ctx, closed.ClientID, time.Time{}, 10)
+	if err != nil || len(history) != 1 || history[0].RxBytes != 7 || history[0].Endpoint != "203.0.113.6:51820" {
+		t.Fatalf("closed session %+v (err %v), want it left as it ended", history, err)
+	}
+
+	if err := s.SaveMonitoring(ctx, nil, nil); err != nil {
+		t.Fatalf("nothing to save: %v", err)
+	}
+}

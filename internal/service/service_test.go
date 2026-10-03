@@ -38,12 +38,20 @@ func (c *clock) advance(d time.Duration) { c.t = c.t.Add(d) }
 
 func newTestService(t *testing.T) (*Service, *clock) {
 	t.Helper()
+	s, c, _ := newTestServiceDB(t)
+	return s, c
+}
+
+// newTestServiceDB is newTestService that also returns the database's path.
+func newTestServiceDB(t *testing.T) (*Service, *clock, string) {
+	t.Helper()
 	ctx := context.Background()
 	sealer, err := keys.NewSealer(bytes.Repeat([]byte{7}, keys.SecretSize))
 	if err != nil {
 		t.Fatal(err)
 	}
-	st, err := store.Open(ctx, filepath.Join(t.TempDir(), "db"), sealer)
+	dbPath := filepath.Join(t.TempDir(), "db")
+	st, err := store.Open(ctx, dbPath, sealer)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -67,7 +75,7 @@ func newTestService(t *testing.T) (*Service, *clock) {
 		Hasher:  auth.NewHasher(auth.Params{Memory: 64, Time: 1, Threads: 1}),
 		Limiter: limiter,
 		Now:     c.now,
-	}, c
+	}, c, dbPath
 }
 
 // web is a request from the admin's browser on the LAN.

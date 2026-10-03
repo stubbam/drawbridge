@@ -273,6 +273,11 @@ M3's exit criteria: everything can be done from a phone or a desktop browser, in
   goes to the login. (A visible page polled every 5 seconds then, which counted as use; now its
   live stream checks the session as often. See the step in §7.)
 
+- `[UNVERIFIED]` On the dashboard, the Bandwidth, Server, and Clients boxes outline in blue under
+  the pointer, like the counts at the top, and a click on one (not on a link, button, or control in
+  it) opens the Charts page, the server settings, and the client list. A tap does on the phone. The
+  boxes have no "Settings" or "All Clients" link now. A headless browser has done all of it.
+
 ## 7. Session tracking (an M4 slice, built ahead of the rest of it)
 
 `Service.TrackConnections` (docs/PLAN.md §6.4) polls every 5 s and records `client.connected`,

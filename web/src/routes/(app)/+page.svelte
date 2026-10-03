@@ -17,6 +17,7 @@
 	import { sortClients, storedSort, storeSort, type SortKey } from '$lib/sort';
 	import { buildSeriesData, refreshMs, bandwidthSeries } from '$lib/traffic';
 	import CopyButton from '$lib/components/CopyButton.svelte';
+	import LinkCard from '$lib/components/LinkCard.svelte';
 	import NetworkChart from '$lib/components/NetworkChart.svelte';
 	import RangeSelect from '$lib/components/RangeSelect.svelte';
 	import SortSelect from '$lib/components/SortSelect.svelte';
@@ -146,7 +147,7 @@
 		</div>
 		<button
 			type="button"
-			class="card text-left transition hover:border-indigo-300 dark:hover:border-indigo-700"
+			class="card card-link text-left"
 			aria-label="View all clients"
 			onclick={() => goClients('all')}
 		>
@@ -155,7 +156,7 @@
 		</button>
 		<button
 			type="button"
-			class="card text-left transition hover:border-indigo-300 dark:hover:border-indigo-700"
+			class="card card-link text-left"
 			aria-label="View online clients"
 			onclick={() => goClients('online')}
 		>
@@ -164,7 +165,7 @@
 		</button>
 		<button
 			type="button"
-			class="card text-left transition hover:border-indigo-300 dark:hover:border-indigo-700"
+			class="card card-link text-left"
 			aria-label="View paused clients"
 			onclick={() => goClients('paused')}
 		>
@@ -174,10 +175,12 @@
 	</section>
 {/if}
 
-<section class="card flex flex-col gap-3" aria-labelledby="bandwidth-heading">
+<LinkCard href={resolve('/charts')} labelledby="bandwidth-heading" class="flex flex-col gap-3">
 	<div class="flex flex-wrap items-start justify-between gap-2">
 		<div>
-			<h2 id="bandwidth-heading" class="font-semibold">Bandwidth</h2>
+			<h2 id="bandwidth-heading" class="font-semibold">
+				<a class="hover:underline focus-visible:underline" href={resolve('/charts')}>Bandwidth</a>
+			</h2>
 			<p class="text-sm text-neutral-500 dark:text-neutral-400">Network traffic of all clients</p>
 		</div>
 		<RangeSelect id="dashboard-range" />
@@ -194,18 +197,14 @@
 		legend={false}
 		empty={bandwidth ? 'No traffic in this range' : 'Loading…'}
 	/>
-</section>
+</LinkCard>
 
 <div class="grid gap-6 lg:grid-cols-2">
 	{#if settings}
-		<section class="card flex flex-col gap-3" aria-labelledby="server-heading">
-			<div class="flex items-center justify-between">
-				<h2 id="server-heading" class="font-semibold">Server</h2>
-				<a
-					class="text-sm font-medium text-indigo-600 dark:text-indigo-400"
-					href={resolve('/settings')}>Settings</a
-				>
-			</div>
+		<LinkCard href={resolve('/settings')} labelledby="server-heading" class="flex flex-col gap-3">
+			<h2 id="server-heading" class="font-semibold">
+				<a class="hover:underline focus-visible:underline" href={resolve('/settings')}>Server</a>
+			</h2>
 			<dl class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm">
 				<dt class="text-neutral-500 dark:text-neutral-400">Endpoint</dt>
 				<dd>{settings.endpoint || 'Not set'}</dd>
@@ -226,21 +225,21 @@
 					<CopyButton text={settings.public_key} />
 				</dd>
 			</dl>
-		</section>
+		</LinkCard>
 	{/if}
 
-	<section class="card @container flex flex-col gap-3" aria-labelledby="clients-heading">
+	<LinkCard
+		href={resolve('/clients')}
+		labelledby="clients-heading"
+		class="@container flex flex-col gap-3"
+	>
 		<div class="flex flex-wrap items-center justify-between gap-2">
-			<h2 id="clients-heading" class="font-semibold">Clients</h2>
-			<div class="flex items-center gap-4">
-				{#if clients.length > 0}
-					<SortSelect id="dashboard-sort" options={sortOptions} bind:value={sort} />
-				{/if}
-				<a
-					class="text-sm font-medium text-indigo-600 dark:text-indigo-400"
-					href={resolve('/clients')}>All Clients</a
-				>
-			</div>
+			<h2 id="clients-heading" class="font-semibold">
+				<a class="hover:underline focus-visible:underline" href={resolve('/clients')}>Clients</a>
+			</h2>
+			{#if clients.length > 0}
+				<SortSelect id="dashboard-sort" options={sortOptions} bind:value={sort} />
+			{/if}
 		</div>
 		{#if clients.length > 0}
 			<p class="text-xs text-neutral-500 dark:text-neutral-400">
@@ -293,7 +292,7 @@
 				{/each}
 			</ul>
 		{/if}
-	</section>
+	</LinkCard>
 </div>
 
 {#if version}

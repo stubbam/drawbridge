@@ -19,6 +19,11 @@
 	.card {
 		@apply rounded-xl border border-neutral-200 bg-white p-4 shadow-sm sm:p-5 dark:border-neutral-800 dark:bg-neutral-900;
 	}
+	/* A card that opens a page when it's clicked (the dashboard's boxes): it says so when the
+	   pointer is over it. */
+	.card-link {
+		@apply cursor-pointer transition hover:border-indigo-300 dark:hover:border-indigo-700;
+	}
 	.btn {
 		@apply inline-flex items-center justify-center gap-1.5 rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm font-medium text-neutral-800 hover:bg-neutral-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 disabled:cursor-not-allowed disabled:opacity-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100 dark:hover:bg-neutral-800;
 	}

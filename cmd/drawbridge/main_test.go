@@ -595,6 +595,15 @@ func TestFormatting(t *testing.T) {
 	}
 }
 
+// TestMain keeps the machine's own journal out of the tests. A test machine can itself run
+// under systemd (a CI runner does), which sets JOURNAL_STREAM and makes the daemon log to the
+// real journal, and then the tests that read its standard error find nothing. The tests that
+// want the journal set the variable themselves, and name a socket of their own.
+func TestMain(m *testing.M) {
+	_ = os.Unsetenv("JOURNAL_STREAM")
+	os.Exit(m.Run())
+}
+
 func TestLoggerDropsTimeUnderJournald(t *testing.T) {
 	var buf bytes.Buffer
 	missing := filepath.Join(t.TempDir(), "no-journal.sock")

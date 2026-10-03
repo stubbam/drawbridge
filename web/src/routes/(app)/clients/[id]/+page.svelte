@@ -24,6 +24,7 @@
 		formatBytes,
 		formatTime
 	} from '$lib/format';
+	import { live, onLiveEvent, useLive } from '$lib/live.svelte';
 	import { poll } from '$lib/poll';
 	import { chartRange } from '$lib/range.svelte';
 	import { buildSeriesData, refreshMs, bandwidthSeries } from '$lib/traffic';
@@ -65,7 +66,48 @@
 			else error = errorMessage(err);
 		}
 	}
-	$effect(() => poll(load, 5000));
+
+	async function loadEvents() {
+		try {
+			events = await api.events({ client: id, limit: 20 });
+		} catch {
+			// load() shows a real error; the events just stay as they were.
+		}
+	}
+
+	// The live feed pushes the client's status as the daemon polls the peers, so while it's open
+	// this page doesn't ask for it; when it can't be had, the page polls as it always did.
+	$effect(() => useLive());
+	$effect(() => {
+		if (!live.open) return poll(load, 5000);
+	});
+	$effect(() => {
+		const s = live.status;
+		if (!live.open || !s) return;
+		const c = s.clients.find((c) => c.id === id);
+		if (c) {
+			client = c;
+			missing = false;
+			now = Date.now();
+		} else {
+			// Not in the feed: just added (its status is on the way), or gone. Asking says which.
+			void load();
+		}
+	});
+	// The client's events are loaded once, and again if the feed was away, and then each one
+	// arrives as it's recorded. A connection or a disconnection also changes its history.
+	$effect(() => {
+		void live.reconnects;
+		void loadEvents();
+	});
+	$effect(() => {
+		const mine = id;
+		return onLiveEvent((e) => {
+			if (e.client_id !== mine) return;
+			events = [e, ...events.filter((x) => x.id !== e.id)].slice(0, 20);
+			if (e.kind === 'client.connected' || e.kind === 'client.disconnected') void loadHistory();
+		});
+	});
 
 	async function loadHistory() {
 		try {

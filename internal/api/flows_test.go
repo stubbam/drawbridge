@@ -713,7 +713,7 @@ func TestEventsFilterByKindAndTime(t *testing.T) {
 	t0 := time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
 	for i, kind := range []string{"client.connected", "client.disconnected", "client.connected"} {
 		e := store.Event{Time: t0.AddDate(0, 0, i), Kind: kind, Category: "connection", Actor: "drawbridge", Via: "system"}
-		if err := svc.Store.AddEvent(ctx, e); err != nil {
+		if _, err := svc.Store.AddEvent(ctx, e); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -800,7 +800,7 @@ func TestEventsExportAsCSV(t *testing.T) {
 	for i := range extra {
 		e := store.Event{Kind: "client.connected", Category: "connection", Actor: "drawbridge", Via: "system",
 			Data: map[string]string{"n": strconv.Itoa(i)}}
-		if err := svc.Store.AddEvent(ctx, e); err != nil {
+		if _, err := svc.Store.AddEvent(ctx, e); err != nil {
 			t.Fatal(err)
 		}
 	}

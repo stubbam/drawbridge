@@ -407,6 +407,18 @@ func NewServerStatus(s service.Status) ServerStatus {
 	return ServerStatus{TunnelUp: s.TunnelUp, Clients: s.Clients, Paused: s.Paused, Online: s.Online}
 }
 
+// StreamStatus is the stream's "status" message: what the dashboard, the client list, and a
+// client's page would each ask for every few seconds, in one.
+type StreamStatus struct {
+	Server  ServerStatus `json:"server"`
+	Clients []ClientView `json:"clients"`
+}
+
+// NewStreamStatus converts the service's snapshot.
+func NewStreamStatus(st service.Status, clients []service.ClientStatus) StreamStatus {
+	return StreamStatus{Server: NewServerStatus(st), Clients: Statuses(clients)}
+}
+
 // TrafficSampleView is one bucket of a client's, or every client's, traffic history
 // (docs/PLAN.md §6.4).
 type TrafficSampleView struct {

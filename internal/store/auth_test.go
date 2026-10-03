@@ -187,7 +187,7 @@ func TestEvents(t *testing.T) {
 		{Kind: "tunnel.drift_corrected", Category: "system", Actor: "drawbridge", Via: "system"},
 		{Kind: "client.paused", Category: "admin", Actor: "root", Via: "cli", ClientID: "c1", ClientName: "phone"},
 	} {
-		if err := s.AddEvent(ctx, e); err != nil {
+		if _, err := s.AddEvent(ctx, e); err != nil {
 			t.Fatalf("event %d: %v", i, err)
 		}
 	}

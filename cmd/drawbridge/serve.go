@@ -254,7 +254,8 @@ type daemon struct {
 
 func (d daemon) run(ctx context.Context) error {
 	webSrv := &http.Server{
-		Handler:           api.New(api.Options{UI: webui.FS(), Service: d.svc, Log: d.log, Allowed: d.allowed}),
+		Handler: api.New(api.Options{UI: webui.FS(), Service: d.svc, Log: d.log, Allowed: d.allowed,
+			Shutdown: ctx.Done()}),
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       time.Minute,
 		IdleTimeout:       2 * time.Minute,

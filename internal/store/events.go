@@ -24,8 +24,8 @@ type Event struct {
 	Data       map[string]string
 }
 
-// AddEvent appends an event. A zero Time means now.
-func (s *Store) AddEvent(ctx context.Context, e Event) error {
+// AddEvent appends an event, and returns its ID. A zero Time means now.
+func (s *Store) AddEvent(ctx context.Context, e Event) (int64, error) {
 	if e.Time.IsZero() {
 		e.Time = s.now()
 	}
@@ -33,18 +33,21 @@ func (s *Store) AddEvent(ctx context.Context, e Event) error {
 	if len(e.Data) > 0 {
 		var err error
 		if data, err = json.Marshal(e.Data); err != nil {
-			return err
+			return 0, err
 		}
 	}
 	var clientID any
 	if e.ClientID != "" {
 		clientID = e.ClientID
 	}
-	_, err := s.db.ExecContext(ctx, `INSERT INTO events (ts, kind, category, actor, via, source_ip,
+	res, err := s.db.ExecContext(ctx, `INSERT INTO events (ts, kind, category, actor, via, source_ip,
 		client_id, client_name, data) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		formatTime(e.Time), e.Kind, e.Category, e.Actor, e.Via, e.SourceIP, clientID, e.ClientName,
 		string(data))
-	return err
+	if err != nil {
+		return 0, err
+	}
+	return res.LastInsertId()
 }
 
 // EventFilter selects events. Zero fields don't filter.

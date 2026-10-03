@@ -13,6 +13,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/stuffam/drawbridge/internal/lan"
@@ -127,6 +128,10 @@ func allowlist(allowed func(context.Context) []netip.Prefix, log *slog.Logger, n
 type handler struct {
 	svc *service.Service
 	log *slog.Logger
+	// shutdown is closed when the daemon is stopping (Options.Shutdown).
+	shutdown <-chan struct{}
+	// streams counts the open streams.
+	streams atomic.Int32
 }
 
 // checkCSRF refuses changes that a browser could have sent on another site's behalf

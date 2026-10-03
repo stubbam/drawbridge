@@ -750,6 +750,76 @@ func TestDaemonServesTheAPIOverTLS(t *testing.T) {
 	}
 }
 
+// TestDaemonStopsWithAStreamOpen checks that the daemon's shutdown doesn't wait on a browser's
+// open stream, which would never end by itself: the graceful shutdown would run out its ten
+// seconds and the daemon would exit with an error.
+func TestDaemonStopsWithAStreamOpen(t *testing.T) {
+	env := newFakeEnv(t)
+	cert, _, err := tlscert.Ensure(filepath.Join(t.TempDir(), "tls"), tlscert.DefaultNames("server"), time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	web, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() {
+		done <- daemon{web: web, svc: env.svc, drift: time.Hour, log: discard, tls: tlscert.Config(cert),
+			fingerprint: tlscert.Fingerprint(cert), sessionInterval: 0}.run(ctx)
+	}()
+
+	pool := x509.NewCertPool()
+	pool.AddCert(cert.Leaf)
+	jar, _ := cookiejar.New(nil)
+	client := &http.Client{Jar: jar, Transport: &http.Transport{
+		TLSClientConfig: &tls.Config{RootCAs: pool, MinVersion: tls.VersionTLS12}}}
+	base := "https://localhost:" + strconv.Itoa(web.Addr().(*net.TCPAddr).Port)
+	waitFor(t, func() bool {
+		resp, err := client.Get(base + "/healthz")
+		if err != nil {
+			return false
+		}
+		resp.Body.Close()
+		return resp.StatusCode == http.StatusOK
+	})
+	password, err := env.svc.CreateAdmin(context.Background(), "admin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := json.Marshal(views.LoginRequest{Username: "admin", Password: password})
+	req, _ := http.NewRequest("POST", base+"/api/auth/login", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Drawbridge", "1")
+	resp, err := client.Do(req)
+	if err != nil || resp.StatusCode != http.StatusOK {
+		t.Fatalf("login: %v, %v", resp, err)
+	}
+	resp.Body.Close()
+
+	stream, err := client.Get(base + "/api/stream")
+	if err != nil || stream.StatusCode != http.StatusOK {
+		t.Fatalf("stream: %v, %v", stream, err)
+	}
+	defer stream.Body.Close()
+	first := make([]byte, 64)
+	if _, err := stream.Body.Read(first); err != nil || !strings.Contains(string(first), "retry:") {
+		t.Fatalf("the stream's first bytes %q, %v", first, err)
+	}
+
+	cancel()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("the daemon stopped with %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the daemon didn't stop with a stream open")
+	}
+}
+
 func TestServeWithTheFakeBackend(t *testing.T) {
 	dir := t.TempDir()
 	secret := filepath.Join(dir, "secret.key")

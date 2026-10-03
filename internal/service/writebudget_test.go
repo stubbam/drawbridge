@@ -117,7 +117,7 @@ func TestWALMeterCountsTransactionsAndPages(t *testing.T) {
 
 	const n = 25
 	for i := range n {
-		err := s.Store.AddEvent(ctx, store.Event{Kind: "auth.logout", Category: "admin", Actor: "admin", Via: "web",
+		_, err := s.Store.AddEvent(ctx, store.Event{Kind: "auth.logout", Category: "admin", Actor: "admin", Via: "web",
 			Data: map[string]string{"n": fmt.Sprint(i)}})
 		if err != nil {
 			t.Fatal(err)

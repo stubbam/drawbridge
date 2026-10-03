@@ -11,6 +11,7 @@
 	} from '$lib/api';
 	import { errorMessage } from '$lib/errors';
 	import { clientState, endpointAddress, formatBitrate, formatBytes } from '$lib/format';
+	import { live, onLiveEvent, useLive } from '$lib/live.svelte';
 	import { poll } from '$lib/poll';
 	import { chartRange } from '$lib/range.svelte';
 	import { sortClients, storedSort, storeSort, type SortKey } from '$lib/sort';
@@ -43,6 +44,14 @@
 		}
 	}
 
+	async function loadSettings() {
+		try {
+			settings = await api.server();
+		} catch {
+			// load() shows a real error; the settings just stay as they were.
+		}
+	}
+
 	async function loadTraffic() {
 		try {
 			const asked = chartRange.value;
@@ -71,7 +80,29 @@
 	$effect(() => storeSort('dashboard', sort));
 	let sorted = $derived(sortClients(clients, sort, now));
 
-	$effect(() => poll(load, 5000));
+	// The live feed pushes the status as the daemon polls the peers, so while it's open this page
+	// doesn't ask for it; when it can't be had, the page polls as it always did.
+	$effect(() => useLive());
+	$effect(() => {
+		if (!live.open) return poll(load, 5000);
+	});
+	$effect(() => {
+		const s = live.status;
+		if (!live.open || !s) return;
+		status = s.server;
+		clients = s.clients;
+		now = Date.now();
+		error = '';
+	});
+	// The settings aren't in the feed, so they're loaded once, and again when they change.
+	$effect(() => {
+		void loadSettings();
+	});
+	$effect(() =>
+		onLiveEvent((e) => {
+			if (e.kind === 'server.settings_changed') void loadSettings();
+		})
+	);
 	// Traffic history is minute-granularity at best (the 1 minute range is the exception), so it
 	// doesn't need the 5s peer-status cadence above; changing the range restarts this poll, for
 	// an immediate refetch.

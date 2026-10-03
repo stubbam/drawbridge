@@ -270,7 +270,8 @@ M3's exit criteria: everything can be done from a phone or a desktop browser, in
 - `[VERIFIED 2026-09-27]` Account → the laptop's and the phone's sessions are listed; logging the
   phone out from the laptop sends the phone to the login on its next action.
 - `[VERIFIED 2026-09-27]` After an hour with the tab closed or in the background, the next action
-  goes to the login. (A visible page polls every 5 seconds, which counts as use.)
+  goes to the login. (A visible page polled every 5 seconds then, which counted as use; now its
+  live stream checks the session as often. See the step in §7.)
 
 ## 7. Session tracking (an M4 slice, built ahead of the rest of it)
 
@@ -327,6 +328,16 @@ only sign a session actually ended.
   at most as much again for checkpoints. (The test measures the log of a simulated day against
   a real database; the real daemon's number includes the checkpoints, the nftables copy it saves
   on each apply, and anything else it writes.)
+- `[UNVERIFIED]` The live stream (`GET /api/stream`) on the reference platform, with the dashboard
+  open on a laptop: a real phone turning its tunnel on shows as Online within about 6 seconds with
+  no touch of the page, `sudo drawbridge client pause NAME` on the host changes the tiles within a
+  second, and the Logs page lists a `client.connected` row at the top as it happens. The stream
+  and its fallback are tested against a fake backend in a headless browser.
+- `[UNVERIFIED]` The stream through the real network and the real daemon: a dashboard left
+  visible stays current overnight and stays logged in until twelve hours after login, while a
+  hidden tab idles out after an hour. `sudo systemctl restart drawbridge` with a page open
+  brings the page back to live by itself within seconds, and `sudo systemctl stop drawbridge`
+  with a page open returns at once, not after ten seconds.
 - `[UNVERIFIED]` A connected client's session bytes on the dashboard still grow at every 5 second
   refresh although the database gets them once a minute, and after `sudo systemctl restart
   drawbridge` the session carries on (no new `connected` event) and its bytes are right again at

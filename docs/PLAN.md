@@ -11,8 +11,8 @@ in the product name.
 
 > Status: **M0–M3 are built** (the tunnel, the CLI, the authenticated API, and the web UI), and
 > so are the session tracker and traffic history from M4. The kernel tests pass in CI, and
-> `docs/MANUAL_CHECKLIST.md` records what has run on real hardware. The rest of M4 (the SSE
-> stream and AdGuard Home integration) is next.
+> `docs/MANUAL_CHECKLIST.md` records what has run on real hardware. The rest of M4 (the AdGuard
+> Home integration) is next.
 > `drawbridge doctor`, the first slice of M5, is built too; the diagnostics page isn't.
 > `docs/REQUIREMENTS.md` lists what the host and network need, and the known roadblocks.
 
@@ -619,6 +619,32 @@ stateDiagram-v2
   - **Times in the UI** are on a 24-hour clock (`18:24`, and `18:24:05` where seconds matter) and
     dates are a day and an English month (`9 Sep`), written out by `web/src/lib/format.ts` and not
     left to the browser's locale. A year is added only to a date in another year than this one.
+- **Live updates** (`GET /api/stream`, Server-Sent Events, ADR 0009) replace the pages' polling:
+  - **Two messages.** `status` comes as the stream opens, then every poll of the peers (5 s by
+    default), and 300 ms after each event (a change is recorded before it's applied to the tunnel,
+    so the status waits to show it): the server's state and every client's status, which is what
+    `GET /api/server/status` and `GET /api/clients` return together. `event` comes as an event is
+    recorded, as `GET /api/events` returns it, with its ID as the message's `id`. They come from
+    an in-process bus (`service.Subscribe`), which never waits for a watcher: a subscriber that
+    falls 64 events behind misses them. An event that couldn't be stored isn't sent.
+  - **The session** is checked on every status, which also counts as use, so a page that stays
+    open and visible stays logged in, as it did when it polled. When the session ends the stream
+    closes, and the browser's reconnect gets a 401. At most 16 streams are open at once.
+  - **No write timeout.** One would cut every stream (ADR 0009), so each write has a 10 s
+    deadline instead, and a reader that has stopped is dropped. On shutdown the daemon closes the
+    streams itself, so its graceful shutdown doesn't wait on them.
+  - **In the web UI** the dashboard, the client list, a client's page, and the Logs page ask for
+    the stream (`web/src/lib/live.svelte.ts`), and one connection serves them all. They take the
+    status from it and don't poll while it's open. A page that shows events lists each as it
+    arrives (the Logs page only those its filters show) and loads them again after the stream has
+    reconnected, because what came while it was away is missed. When the stream isn't open (it's
+    connecting, or something between the browser and the daemon won't carry it) the pages poll
+    every 5 s, as before, so nothing depends on it. A hidden tab closes its stream, so it stops
+    keeping its session alive.
+  - **A limit:** the daemon speaks HTTP/1.1 only, so an open stream holds a connection, and a
+    browser allows six to one host. Hidden tabs hold none, so this takes six visible tabs or
+    windows, which would starve the seventh's requests. Enabling HTTP/2 (`h2` in the TLS
+    configuration's protocols) would lift it.
 - **Low write volume:** samples are buffered in memory and flushed once per raw interval in one
   transaction, and a periodic job rolls old raw rows up into hourly ones, then prunes both past
   their retention windows. This keeps SD card writes low (and stays low on an SSD too, unless the
@@ -687,8 +713,9 @@ stateDiagram-v2
   - Stored server-side in the DB, in a `__Host-drawbridge` cookie that is `HttpOnly`, `Secure`,
     and `SameSite=Strict`. The DB holds only a SHA-256 hash of each token.
   - They expire after an hour idle, and twelve hours after login at most. Their last use is
-    written at most every five minutes, to spare the SD card. A visible page's live status
-    counts as use; background tabs stop polling, so they do idle out.
+    written at most every five minutes, to spare the SD card. A visible page that shows live
+    status counts as use (its stream checks the session on every status, §6.4); a background tab
+    closes its stream, so it does idle out.
   - The API lists active sessions and can revoke them. Changing the password ends every other
     session.
 - **TOTP 2FA** with recovery codes (M5).
@@ -849,6 +876,7 @@ GET    /api/clients/{id}/traffic?range=1m|1h|12h|24h|7d|30d|90d            (M4)
 GET    /api/traffic?range=1m|1h|12h|24h|7d|30d|90d   summed across clients (M4)
 GET    /api/traffic/clients?range=1m|1h|12h|24h|7d|30d|90d   one series per client (M4)
 GET    /api/clients/{id}/sessions?before=&limit=                           (M4)
+GET    /api/stream                       SSE: status every poll + live events (M4)
 
 Later:
 POST   /api/auth/totp/enroll | /verify                                    (M5)
@@ -859,7 +887,6 @@ GET    /api/dns                          PUT /api/dns                      (M4)
 GET    /api/integrations/adguard         PUT /api/integrations/adguard     (M4)
 POST   /api/integrations/adguard/test    check credentials and DNS on the VPN addresses
 GET    /api/clients/{id}/dns-log         recent queries from AdGuard Home  (M4)
-GET    /api/stream                       SSE: peer status every 5 s + live events (M4)
 GET    /api/system/health                diagnostics                       (M5)
 POST   /api/system/backup                POST /api/system/restore          (M5)
 ```
@@ -1085,10 +1112,10 @@ Each milestone ends in a usable, tested state.
 
 - The setup wizard, login, dashboard, client list and detail, add/edit/pause/delete, download and
   QR, server settings, DNS settings (public resolvers by default, with a check for a resolver on
-  the host), and live status. *Built. Live status polls every 5 seconds while the page is visible; the SSE stream
-  (§8, ADR 0009) arrives with monitoring in M4. The System page (diagnostics, backup, TLS) is
-  M5; M3's Account page covers the password and sessions. On real hardware:
-  docs/MANUAL_CHECKLIST.md §6.*
+  the host), and live status. *Built. Live status was polled every 5 seconds; the SSE stream
+  (§6.4, ADR 0009) pushes it now, and a page polls only when the stream can't be had. The System
+  page (diagnostics, backup, TLS) is M5; M3's Account page covers the password and sessions. On
+  real hardware: docs/MANUAL_CHECKLIST.md §6.*
 - The `.deb` carries both systemd units (the tunnel unit arrives in M1).
 - **Exit:**
   - Every requested capability (add, remove, pause, basic logs, FQDN, IPs, MTU, DNS, IPv4 and
@@ -1101,8 +1128,8 @@ Each milestone ends in a usable, tested state.
   retention, charts, the log viewer with filters and CSV export, and journald structured logs.
   *Built: the session tracker, its three events, and `client_sessions`; traffic sampling with
   rollup and retention, the dashboard, client-detail, and Charts pages, and the log viewer's
-  filters and CSV export (§6.4), structured journald fields, and the write-budget test. Not built
-  yet: the SSE stream and the AdGuard Home integration.*
+  filters and CSV export (§6.4), structured journald fields, the write-budget test, and the SSE
+  stream. Not built yet: the AdGuard Home integration.*
 - AdGuard Home integration: client name sync and the per-client DNS log.
 - **Exit:**
   - Connect, disconnect, and roam events are correct in simulated tests and on real hardware,

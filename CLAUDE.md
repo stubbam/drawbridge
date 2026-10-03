@@ -43,7 +43,8 @@ setups.** What exists:
   within what an SD card can take. The dashboard, client pages, and log get their status and
   new events from a Server-Sent Events stream (`GET /api/stream`, `internal/api/stream.go`,
   `web/src/lib/live.svelte.ts`), and poll only when it can't be had. Also ahead of the rest of M4
-  (AdGuard Home sync isn't built yet; its API client, `internal/adguard`, is).
+  (AdGuard Home sync isn't built yet; its API client, `internal/adguard`, and the connection to
+  it, saved and tested from Settings, are).
 - The CLI, which talks to the daemon over the control socket: `server show|set`,
   `client list|add|show|pause|resume|rename|delete|config|qr`, `events`, `doctor`, and
   `admin setup-token|create|reset-password`.
@@ -297,6 +298,15 @@ These are the rules most likely to get silently broken.
   database and fails when the writes pass the budget, so a poll-time write shows up there; keep
   new periodic work out of the poll, or in the flush. `make test-go` runs it without the race
   detector, which makes it too slow.
+- **A saved password goes only where it was saved to.** The AdGuard Home password is sent to
+  the address and account saved with it. A request that changes either (a save, or a test of
+  unsaved values) must bring a password of its own, or the service refuses it before anything is
+  sent (`accountFor`, `internal/service/adguard.go`). Without that, a hijacked session could
+  point the address at its own server and have the daemon send over the saved password. Keep it
+  true of every integration, and of anything that later calls AdGuard Home on its own.
+- **Never retry an AdGuard Home 401 on a timer.** Five refusals block the daemon's address for
+  15 minutes, and then the right password is refused too ("Verified facts"). A test remembers
+  a refused account for 30 seconds; the sync will stop on a 401 until the connection changes.
 - **Secrets stay secret.** Private keys, PSKs, and the setup token are encrypted at rest (the
   `*_enc` columns) and never logged, except the setup token, which the journal shows until the
   admin account exists (§6.5). Session tokens are stored only as SHA-256 hashes. Views never

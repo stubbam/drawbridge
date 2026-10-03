@@ -74,6 +74,10 @@ var routes = []route{
 	{"GET", "/api/clients/{id}/sessions", false, (*handler).clientSessions},
 	{"GET", "/api/traffic", false, (*handler).totalTraffic},
 	{"GET", "/api/traffic/clients", false, (*handler).clientsTraffic},
+	{"GET", "/api/integrations/adguard", false, (*handler).getAdGuard},
+	{"PUT", "/api/integrations/adguard", false, (*handler).putAdGuard},
+	{"DELETE", "/api/integrations/adguard", false, (*handler).deleteAdGuard},
+	{"POST", "/api/integrations/adguard/test", false, (*handler).testAdGuard},
 	{"GET", "/api/events", false, (*handler).events},
 	{"GET", "/api/stream", false, (*handler).stream},
 }

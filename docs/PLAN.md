@@ -541,6 +541,17 @@ AdGuard Home in particular gets an optional integration (below).
     - The query log's search is a **substring** match, so 10.8.0.2 also finds 10.8.0.20. The
       DNS log keeps only entries from exactly the client's addresses, and pages past its busy
       neighbors.
+  - **The connection (built).** Settings has the address, the account's username, and its
+    password, with a Test button, a Save, and a Remove. The password is encrypted in the database
+    and can be set but never read back. **It's sent only to the address and account it was saved
+    with**: a request that changes either (a save, or a test of unsaved values) has to bring the
+    password again, or it's refused before anything is sent. Otherwise anyone who could save an
+    address, a hijacked session say, could point it at their own server and have the daemon send
+    them the saved password. The test reports AdGuard Home's version, whether its DNS server runs
+    and its protection is on, how its query log is set (off, or hiding client addresses, which
+    would leave a client's DNS log empty), and what the server's VPN addresses answer for DNS. A
+    refused account is remembered for 30 seconds, so a double click can't walk the daemon into
+    AdGuard Home's 15-minute block. Saving and removing are events; neither carries the password.
   - **How name sync works (M4).** Like the reconciler, it's level-triggered: it lists AdGuard
     Home's persistent clients, compares them with Drawbridge's, and makes up the difference. It
     runs at startup, shortly after a client is added, renamed, or deleted, and every five
@@ -885,8 +896,9 @@ auth_sessions       id PK (public, for revoking), token_hash UNIQUE, user_id, cr
 setup_token         (singleton) token_enc, created_at; deleted once the admin exists
 one_time_links      token_hash PK, client_id, expires_at, used_at NULL        (M6)
 api_tokens          id, name, token_hash, scopes, created_at, last_used_at    (M6)
-dns_integration     (singleton) kind ('adguard'), enabled, base_url, username NULL,
-                    password_enc, sync_names                                   (M4)
+dns_integration     (singleton) kind ('adguard'), base_url, username ('' for no login),
+                    password_enc NULL, updated_at. `enabled` and `sync_names` come with
+                    the sync                                                   (M4)
 dns_integration_clients
                     client_id PK, name, ids JSON: what sync last wrote for a client, so
                     it changes only what it made. No foreign key: a deleted client's row is
@@ -932,6 +944,13 @@ GET    /api/traffic?range=1m|1h|12h|24h|7d|30d|90d   summed across clients (M4)
 GET    /api/traffic/clients?range=1m|1h|12h|24h|7d|30d|90d   one series per client (M4)
 GET    /api/clients/{id}/sessions?before=&limit=                           (M4)
 GET    /api/stream                       SSE: status every poll + live events (M4)
+GET    /api/integrations/adguard         PUT /api/integrations/adguard     (M4)
+                                         the connection: address, username, whether a password
+                                         is saved. The password is write-only. Changing the
+                                         address or the username takes the password again
+DELETE /api/integrations/adguard         forget the connection and the password
+POST   /api/integrations/adguard/test    asks AdGuard Home who it is, and the VPN addresses for
+                                         DNS; saves nothing. A failure is a 200 with `ok` false
 
 Later:
 POST   /api/auth/totp/enroll | /verify                                    (M5)
@@ -939,8 +958,6 @@ POST   /api/server/rotate-key                                              (M5)
 POST   /api/server/apply/confirm         confirm a safe-apply change       (M5)
 POST   /api/clients/{id}/rotate-keys                                       (M5)
 GET    /api/dns                          PUT /api/dns                      (M4)
-GET    /api/integrations/adguard         PUT /api/integrations/adguard     (M4)
-POST   /api/integrations/adguard/test    check credentials and DNS on the VPN addresses
 GET    /api/clients/{id}/dns-log         recent queries from AdGuard Home  (M4)
 GET    /api/system/health                diagnostics                       (M5)
 POST   /api/system/backup                POST /api/system/restore          (M5)
@@ -962,7 +979,7 @@ can be added later (i18n).
 | **Clients** | Searchable, filterable list, sortable by name, status, last handshake, or IP address: status dot, name, addresses, last handshake, endpoint, RX/TX, pause toggle, and quick actions (QR, download, edit, delete) |
 | **Client detail** | Overview, config and QR, bandwidth and cumulative charts, session history, recent DNS queries (from AdGuard Home), and events. Pause (or Resume), Rename, and Delete are buttons at the top: Rename opens a dialog like Add Client's, and Delete asks to confirm in one. An "Advanced" edit section and rotating keys are planned. |
 | **Charts** | Received, Sent, Cumulative Received, and Cumulative Sent charts, stacked at the dashboard chart's width, with a line per client, a range control, a legend, and a tooltip that follows the cursor (§6.4) |
-| **Server settings** | The sections from §6.2, each marked with its impact |
+| **Server settings** | The sections from §6.2, each marked with its impact. Below them, the AdGuard Home connection (address, username, password, and Test, Save, and Remove buttons), a form of its own because it's a different part of the API (§6.3) |
 | **DNS** | Presets and custom resolvers, search domains, AdGuard Home connection (address, account, test button, sync status) |
 | **Logs** | Events table with filters (category, event, client, time) and CSV export, plus an audit tab |
 | **System** | Diagnostics, backup/restore, admin account and 2FA, sessions, TLS, retention, about |

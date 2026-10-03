@@ -59,6 +59,13 @@ choices and a *Check this server* button, and `drawbridge server set --dns serve
 check, saving only the addresses that answer (`--force` skips it). systemd-resolved doesn't
 count: its stub listens on `127.0.0.53` only, so the check finds nothing.
 
+**AdGuard Home** can also be connected to Drawbridge (Settings → AdGuard Home), which is optional:
+its address (`http://127.0.0.1:3000` for a local install), and an account. An account made for
+Drawbridge is best, and AdGuard Home's `AdGuardHome.yaml` can list several users; its admin
+account works too. AdGuard Home blocks an address for 15 minutes after five refused logins, so
+check the password before pressing Test again. AdGuard Home's query log must be on, and must not
+anonymize client addresses, for a client's queries to be found. Test says when either is so.
+
 *If the check finds nothing on a host that runs a resolver:* it must listen on the VPN addresses
 (for AdGuard Home, `dns.bind_hosts` lists them or `0.0.0.0` and `::`), and start after the tunnel
 exists or bind all addresses. If it says a resolver "refused the query," the resolver's access

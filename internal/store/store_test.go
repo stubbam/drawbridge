@@ -45,6 +45,49 @@ func initialized(t *testing.T) *Store {
 	return s
 }
 
+// undo is what takes back each migration after the first two: the statements that remove what
+// it added. A new migration needs an entry here, and TestEveryMigrationCanBeRolledBack says so.
+var undo = map[int][]string{
+	3: {`ALTER TABLE server DROP COLUMN admin_allowed`},
+	4: {`DROP TABLE client_sessions`},
+	5: {`DROP TABLE traffic`},
+	6: {`DROP TABLE dns_integration`},
+}
+
+// rollBackTo puts the database back as it was after the given migration, so a test can open it
+// with a newer build and see the upgrade. migrate() tracks one high-water mark, not a set of
+// applied versions, so every later migration has to go, not just the one under test.
+func rollBackTo(t *testing.T, s *Store, version int) {
+	t.Helper()
+	ctx := context.Background()
+	for v := len(undo) + 2; v > version; v-- {
+		for _, stmt := range undo[v] {
+			if _, err := s.db.ExecContext(ctx, stmt); err != nil {
+				t.Fatalf("rolling back migration %d: %v", v, err)
+			}
+		}
+	}
+	if _, err := s.db.ExecContext(ctx, `DELETE FROM schema_migrations WHERE version > ?`, version); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestEveryMigrationCanBeRolledBack(t *testing.T) {
+	files, err := fs.Glob(migrationFiles, "migrations/*.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The first two build the tables everything else changes, and nothing rolls them back.
+	if want := len(files) - 2; len(undo) != want {
+		t.Errorf("%d migrations after the first two, but %d entries in undo; add the new migration's", want, len(undo))
+	}
+	for v := 3; v <= len(files); v++ {
+		if len(undo[v]) == 0 {
+			t.Errorf("no way to roll back migration %d", v)
+		}
+	}
+}
+
 func TestSettingsBeforeInitialize(t *testing.T) {
 	s, _ := openTest(t)
 	if _, err := s.Settings(context.Background()); !errors.Is(err, ErrNotInitialized) {
@@ -412,21 +455,7 @@ func TestMigrationAddsAdminAllowedToAnExistingServer(t *testing.T) {
 	if _, err := s.UpdateSettings(ctx, func(st *model.Settings) error { st.EndpointHost = "vpn.example.com"; return nil }); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.db.ExecContext(ctx, `ALTER TABLE server DROP COLUMN admin_allowed`); err != nil {
-		t.Fatal(err)
-	}
-	// Later migrations (client_sessions, traffic) exist too now: simulating "as it was
-	// after migration 2" needs all of them rolled back, since migrate() tracks a single
-	// high-water mark, not a set of applied versions.
-	if _, err := s.db.ExecContext(ctx, `DROP TABLE client_sessions`); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := s.db.ExecContext(ctx, `DROP TABLE traffic`); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := s.db.ExecContext(ctx, `DELETE FROM schema_migrations WHERE version >= 3`); err != nil {
-		t.Fatal(err)
-	}
+	rollBackTo(t, s, 2)
 	_ = s.Close()
 
 	again, err := Open(ctx, path, testSealer(t, 1))

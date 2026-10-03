@@ -28,6 +28,7 @@
 	import { poll } from '$lib/poll';
 	import { chartRange } from '$lib/range.svelte';
 	import { buildSeriesData, refreshMs, bandwidthSeries } from '$lib/traffic';
+	import ClientDNSLog from '$lib/components/ClientDNSLog.svelte';
 	import CopyButton from '$lib/components/CopyButton.svelte';
 	import DeleteClientModal from '$lib/components/DeleteClientModal.svelte';
 	import NetworkChart from '$lib/components/NetworkChart.svelte';
@@ -367,6 +368,8 @@
 			</ul>
 		{/if}
 	</section>
+
+	<ClientDNSLog {id} />
 
 	<section class="card flex flex-col gap-3" aria-labelledby="events-heading">
 		<h2 id="events-heading" class="font-semibold">Activity</h2>

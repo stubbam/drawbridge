@@ -220,3 +220,124 @@ test('turning AdGuard Home on names the clients, and the names follow the client
 		await adguard.close();
 	}
 });
+
+test("a client's page shows what it looked up, from AdGuard Home's query log", async ({ page }) => {
+	const problems = watchConsole(page);
+	const adguard = await startFakeAdGuard('drawbridge', password);
+	cli('client', 'add', 'DNS Probe');
+	cli('client', 'add', 'Quiet Probe');
+	try {
+		await login(page);
+		const clients: { id: string; name: string; ipv4: string; ipv6: string }[] = await (
+			await page.request.get('/api/clients')
+		).json();
+		const probe = clients.find((c) => c.name === 'DNS Probe')!;
+		const quiet = clients.find((c) => c.name === 'Quiet Probe')!;
+		const log = page.getByRole('region', { name: 'Recent DNS Queries' });
+
+		// With AdGuard Home off, the section says where its queries come from, and how to get them.
+		await page.goto(`/clients/${probe.id}`);
+		await expect(log).toContainText(
+			"What this client looks up comes from AdGuard Home's query log"
+		);
+		await expect(log.getByRole('link', { name: 'Turn on AdGuard Home in Settings' })).toBeVisible();
+		await expect(log.getByRole('button', { name: 'Refresh' })).toHaveCount(0);
+
+		// Turned on (name sync stays off: the log only reads).
+		const saved = await page.request.put('/api/integrations/adguard', {
+			headers: { 'X-Drawbridge': '1' },
+			data: {
+				base_url: adguard.url,
+				username: 'drawbridge',
+				password,
+				enabled: true,
+				sync_names: false
+			}
+		});
+		expect(saved.ok()).toBe(true);
+		const minutesAgo = (m: number) => new Date(Date.now() - m * 60_000);
+		adguard.addQuery({
+			client: probe.ipv4,
+			domain: 'example.com',
+			answers: ['93.184.216.34'],
+			time: minutesAgo(5)
+		});
+		adguard.addQuery({
+			client: probe.ipv6,
+			domain: 'ipv6.example.com',
+			type: 'AAAA',
+			answers: ['2001:db8::1'],
+			time: minutesAgo(3)
+		});
+		adguard.addQuery({
+			client: probe.ipv4,
+			domain: 'ads.example.net',
+			blockedBy: '||ads.example.net^',
+			time: minutesAgo(1)
+		});
+		// AdGuard Home's search finds these too, and they aren't this client's.
+		adguard.addQuery({
+			client: probe.ipv4 + '0',
+			domain: 'neighbor.example.org',
+			time: minutesAgo(2)
+		});
+		adguard.addQuery({
+			client: '192.0.2.250',
+			domain: `${probe.ipv4}.example.org`,
+			time: minutesAgo(4)
+		});
+
+		await page.reload();
+		const rows = log.getByRole('listitem');
+		await expect(rows).toHaveCount(3);
+		await expect(rows.nth(0)).toContainText('ads.example.net');
+		await expect(rows.nth(0)).toContainText('Blocked');
+		await expect(rows.nth(0)).toContainText('||ads.example.net^');
+		await expect(rows.nth(1)).toContainText('ipv6.example.com');
+		await expect(rows.nth(1)).toContainText('AAAA');
+		await expect(rows.nth(1)).toContainText('2001:db8::1');
+		await expect(rows.nth(2)).toContainText('example.com');
+		await expect(rows.nth(2)).toContainText('93.184.216.34');
+		await expect(log).not.toContainText('neighbor.example.org');
+		await expect(log).not.toContainText(`${probe.ipv4}.example.org`);
+
+		// The link searches AdGuard Home's own log for this client's address, on the host the admin
+		// is browsing Drawbridge on (here the same, 127.0.0.1) and AdGuard Home's port.
+		const link = log.getByRole('link', { name: "Open this client's queries in AdGuard Home" });
+		await expect(link).toHaveAttribute(
+			'href',
+			`${adguard.url}/#logs?search=${encodeURIComponent(`"${probe.ipv4}"`)}`
+		);
+		await expect(link).toHaveAttribute('target', '_blank');
+
+		// Refresh reads it again.
+		adguard.addQuery({ client: probe.ipv4, domain: 'fresh.example.com', answers: ['192.0.2.8'] });
+		await log.getByRole('button', { name: 'Refresh' }).click();
+		await expect(rows).toHaveCount(4);
+		await expect(rows.first()).toContainText('fresh.example.com');
+
+		// A client with no queries: if AdGuard Home's settings are the reason, the section says so.
+		await page.goto(`/clients/${quiet.id}`);
+		await expect(log).toContainText("hides the end of each client's address");
+		adguard.setLog(false, false);
+		await log.getByRole('button', { name: 'Refresh' }).click();
+		await expect(log).toContainText('query log is off');
+		adguard.setLog(true, false);
+		await log.getByRole('button', { name: 'Refresh' }).click();
+		await expect(log).toContainText("has no queries from this client's addresses");
+
+		// And when AdGuard Home can't be read, it says why.
+		adguard.setDown(true);
+		await log.getByRole('button', { name: 'Refresh' }).click();
+		await expect(log.getByRole('alert')).toContainText("can't reach AdGuard Home");
+		adguard.setDown(false);
+		await log.getByRole('button', { name: 'Refresh' }).click();
+		await expect(log.getByRole('alert')).toHaveCount(0);
+		expect(problems).toEqual([]);
+	} finally {
+		await page.request.delete('/api/integrations/adguard', { headers: { 'X-Drawbridge': '1' } });
+		cli('client', 'delete', '--yes', 'DNS Probe');
+		cli('client', 'delete', '--yes', 'Quiet Probe');
+		await adguard.close();
+	}
+});

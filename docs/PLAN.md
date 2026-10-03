@@ -9,11 +9,9 @@ The name: a drawbridge controls who crosses into the castle, and raising it (pau
 keeps them out. "WireGuard" is a registered trademark, so it appears only in descriptions, never
 in the product name.
 
-> Status: **M0–M3 are built** (the tunnel, the CLI, the authenticated API, and the web UI), and
-> so are the session tracker and traffic history from M4. The kernel tests pass in CI, and
-> `docs/MANUAL_CHECKLIST.md` records what has run on real hardware. The rest of M4 (the AdGuard
-> Home integration) is nearly done: its API client, the connection, and client name sync are
-> built, and the per-client DNS log is not.
+> Status: **M0–M4 are built** (the tunnel, the CLI, the authenticated API, the web UI, and
+> monitoring and logging, which ends with the AdGuard Home integration). The kernel tests pass in
+> CI, and `docs/MANUAL_CHECKLIST.md` records what has run on real hardware.
 > `drawbridge doctor`, the first slice of M5, is built too; the diagnostics page isn't.
 > `docs/REQUIREMENTS.md` lists what the host and network need, and the known roadblocks.
 
@@ -590,10 +588,27 @@ AdGuard Home in particular gets an optional integration (below).
     - Removing the connection forgets the record. What it wrote stays in AdGuard Home, because the
       account to remove it with is gone. Another address starts the record over, because it's
       another AdGuard Home.
-  - **Per-client DNS log (M4)** shows the client's latest queries from the log, 50 of them: when,
-    the name and type, the answer, and whether AdGuard Home blocked it and by what rule. It says
-    so when AdGuard Home's log is off or hides client addresses, which would leave the view empty
-    for a reason that isn't obvious.
+  - **Per-client DNS log (built)** is a section on the client's page, "Recent DNS Queries": the
+    latest 50 queries (up to 200 with `limit`) newest first: when, the name and type, what it
+    answered, and, when AdGuard Home blocked it, the rule. It reads when the page opens and when
+    asked again, not on a timer. It needs *Use AdGuard Home* on, and not name sync: reading
+    writes nothing. Viewing it isn't an event, because it changes nothing, and AdGuard Home's own
+    interface shows the same.
+    - AdGuard Home's search matches part of an address (verified), so the daemon asks for each of
+      the client's addresses, keeps only the entries from exactly that address, and looks
+      through at most five pages of 200 for each, so a client that's been quiet behind busy
+      neighbors can show fewer than asked for. The queries are fetched on the page's request, not
+      kept.
+    - It says so when AdGuard Home's settings leave the view empty: its query log is off, or it
+      hides the end of each client's address (verified: it logs every client as `10.8.0.0`). A
+      client that has simply looked nothing up gets no warning.
+    - It follows the sync's rule for a refused account: after one 401 it asks no more, whoever
+      asked, until the connection changes or a test shows the account works. A page that's
+      reloaded can't walk the daemon into AdGuard Home's block.
+    - "Open this client's queries in AdGuard Home" links to AdGuard Home's own log, searching
+      for the client's IPv4 address. The saved address is the daemon's, and for a local install
+      it's `127.0.0.1`, which only the host can open, so the link uses the host the admin is
+      browsing Drawbridge on, with AdGuard Home's port.
   - **Other resolvers.** AdGuard Home is the first integration, not the only one the design
     allows. Pi-hole is the likeliest next (its v6 API only). Without an integration, a host's
     resolver of any kind still works as the clients' DNS: the check, the wizard, and `doctor`
@@ -633,7 +648,7 @@ the whole app, remembered in the browser. A Charts page (an icon in the header, 
 and Server Settings) shows the same history per client, as Received, Sent, Cumulative Received,
 and Cumulative Sent charts, stacked (`GET /api/traffic/clients`). The log viewer's filters and CSV
 export are built too (below), and so are the structured journald fields. AdGuard Home client
-name sync is built (§6.3); its per-client DNS log is pending.*
+name sync and the per-client DNS log are built (§6.3).*
 
 ```mermaid
 stateDiagram-v2
@@ -979,6 +994,8 @@ POST   /api/integrations/adguard/test    asks AdGuard Home who it is, and the VP
                                          DNS; saves nothing. A failure is a 200 with `ok` false
 POST   /api/integrations/adguard/sync    names the clients in AdGuard Home now; returns how the
                                          sync is doing (also in GET /api/integrations/adguard)
+GET    /api/clients/{id}/dns-log?limit=  a client's recent queries from AdGuard Home's log;
+                                         `state` is off, ok, or error (M4)
 
 Later:
 POST   /api/auth/totp/enroll | /verify                                    (M5)
@@ -986,7 +1003,6 @@ POST   /api/server/rotate-key                                              (M5)
 POST   /api/server/apply/confirm         confirm a safe-apply change       (M5)
 POST   /api/clients/{id}/rotate-keys                                       (M5)
 GET    /api/dns                          PUT /api/dns                      (M4)
-GET    /api/clients/{id}/dns-log         recent queries from AdGuard Home  (M4)
 GET    /api/system/health                diagnostics                       (M5)
 POST   /api/system/backup                POST /api/system/restore          (M5)
 ```
@@ -1005,7 +1021,7 @@ can be added later (i18n).
 | **Login** | Username, password, and TOTP code |
 | **Dashboard** | Server card (up/down, endpoint, public key, port, addresses), client counts (total / online / paused / outdated), client list sortable by name or status (each connected client's endpoint address, session and total traffic), bandwidth chart, recent events, diagnostics warnings. Each box opens its page when it's clicked, and its outline turns blue under the pointer: the counts open the client list (filtered by state), Bandwidth opens Charts, Server opens the settings, and Clients opens the client list. A click on a link, button, or control inside a box does its own thing, and dragging over a box's text selects it without leaving (a double-click on a word leaves on its first click). The headings are links too, for the keyboard |
 | **Clients** | Searchable, filterable list, sortable by name, status, last handshake, or IP address: status dot, name, addresses, last handshake, endpoint, RX/TX, pause toggle, and quick actions (QR, download, edit, delete) |
-| **Client detail** | Overview, config and QR, bandwidth and cumulative charts, session history, recent DNS queries (from AdGuard Home), and events. Pause (or Resume), Rename, and Delete are buttons at the top: Rename opens a dialog like Add Client's, and Delete asks to confirm in one. An "Advanced" edit section and rotating keys are planned. |
+| **Client detail** | Overview, config and QR, bandwidth and cumulative charts, session history, recent DNS queries (from AdGuard Home, when its integration is on), and events. Pause (or Resume), Rename, and Delete are buttons at the top: Rename opens a dialog like Add Client's, and Delete asks to confirm in one. An "Advanced" edit section and rotating keys are planned. |
 | **Charts** | Received, Sent, Cumulative Received, and Cumulative Sent charts, stacked at the dashboard chart's width, with a line per client, a range control, a legend, and a tooltip that follows the cursor (§6.4) |
 | **Server settings** | The sections from §6.2, each marked with its impact. Below them, the AdGuard Home connection (address, username, password, and Test, Save, and Remove buttons), a form of its own because it's a different part of the API (§6.3) |
 | **DNS** | Presets and custom resolvers, search domains, AdGuard Home connection (address, account, test button, sync status) |
@@ -1229,9 +1245,9 @@ Each milestone ends in a usable, tested state.
   *Built: the session tracker, its three events, and `client_sessions`; traffic sampling with
   rollup and retention, the dashboard, client-detail, and Charts pages, and the log viewer's
   filters and CSV export (§6.4), structured journald fields, the write-budget test, and the SSE
-  stream. The AdGuard Home client, the connection, and client name sync are built (§6.3); the
-  per-client DNS log isn't.*
-- AdGuard Home integration: client name sync and the per-client DNS log.
+  stream. The AdGuard Home integration is built (§6.3): its API client, the connection, client
+  name sync, and the per-client DNS log.*
+- AdGuard Home integration: client name sync and the per-client DNS log. *Built.*
 - **Exit:**
   - Connect, disconnect, and roam events are correct in simulated tests and on real hardware,
     with real clients *(done — docs/MANUAL_CHECKLIST.md §7)*.

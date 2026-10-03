@@ -9,6 +9,19 @@ export interface FakePersistent {
 	[field: string]: unknown;
 }
 
+/** A query in the fake's log. */
+export interface FakeQuery {
+	client: string;
+	domain: string;
+	/** A, AAAA, and so on; A when left out. */
+	type?: string;
+	/** Blocked by this rule, answering 0.0.0.0. */
+	blockedBy?: string;
+	answers?: string[];
+	/** When it happened; now when left out. Later queries come first. */
+	time?: Date;
+}
+
 export interface FakeAdGuard {
 	/** Where its API is, as an admin would type it: no path, so `/control` is added. */
 	url: string;
@@ -21,6 +34,10 @@ export interface FakeAdGuard {
 	/** Adds a client the way the admin would in AdGuard Home's own UI. */
 	addClient: (name: string, ids: string[]) => void;
 	removeClient: (name: string) => void;
+	/** Puts a query in its log. */
+	addQuery: (q: FakeQuery) => void;
+	/** Sets whether the log is on, and whether it hides each client's address. */
+	setLog: (enabled: boolean, anonymize: boolean) => void;
 	/** Makes it unreachable (the connection ends with no answer), or reachable again. */
 	setDown: (down: boolean) => void;
 	close: () => Promise<void>;
@@ -37,6 +54,9 @@ export async function startFakeAdGuard(user: string, password: string): Promise<
 	let refused = 0;
 	let clients: FakePersistent[] = [];
 	let down = false;
+	let logOn = true;
+	let anonymize = true;
+	const log: (FakeQuery & { time: Date })[] = [];
 	const want = 'Basic ' + Buffer.from(`${user}:${password}`).toString('base64');
 
 	/** Adds or replaces a client, refusing as AdGuard Home does: a 400 and a line of text. */
@@ -79,6 +99,37 @@ export async function startFakeAdGuard(user: string, password: string): Promise<
 			};
 			const refuse = (msg: string) => res.writeHead(400, { 'Content-Type': 'text/plain' }).end(msg);
 			const done = (err: string | null) => (err ? refuse(err) : res.end());
+			const url = new URL(req.url ?? '/', 'http://fake');
+			if (req.method === 'GET' && url.pathname === '/control/querylog') {
+				// Like AdGuard Home's, the search matches part of the client's address or the name.
+				const search = url.searchParams.get('search') ?? '';
+				const limit = Number(url.searchParams.get('limit') ?? 500);
+				const olderThan = url.searchParams.get('older_than');
+				const found = log
+					.filter((q) => !olderThan || q.time < new Date(olderThan))
+					.filter((q) => !search || q.client.includes(search) || q.domain.includes(search))
+					.sort((a, b) => b.time.getTime() - a.time.getTime())
+					.slice(0, limit);
+				return json({
+					oldest: found.length ? found[found.length - 1].time.toISOString() : '',
+					data: found.map((q) => ({
+						time: q.time.toISOString(),
+						client: q.client,
+						question: { class: 'IN', name: q.domain, type: q.type ?? 'A' },
+						status: 'NOERROR',
+						reason: q.blockedBy ? 'FilteredBlackList' : 'NotFilteredNotFound',
+						rules: q.blockedBy ? [{ filter_list_id: 0, text: q.blockedBy }] : [],
+						answer: (q.blockedBy ? ['0.0.0.0'] : (q.answers ?? [])).map((value) => ({
+							type: q.type ?? 'A',
+							value,
+							ttl: 60
+						})),
+						cached: false,
+						upstream: '9.9.9.9:53',
+						elapsedMs: '12.5'
+					}))
+				});
+			}
 			switch (`${req.method} ${req.url}`) {
 				case 'GET /control/status':
 					return json({
@@ -90,7 +141,7 @@ export async function startFakeAdGuard(user: string, password: string): Promise<
 						http_port: 3000
 					});
 				case 'GET /control/querylog/config':
-					return json({ enabled: true, anonymize_client_ip: true, interval: 86400000 });
+					return json({ enabled: logOn, anonymize_client_ip: anonymize, interval: 86400000 });
 				case 'GET /control/clients':
 					return json({
 						clients: clients.length ? clients : null,
@@ -121,6 +172,8 @@ export async function startFakeAdGuard(user: string, password: string): Promise<
 		clients: () => structuredClone(clients),
 		addClient: (name, ids) => void put(null, { name, ids }),
 		removeClient: (name) => void (clients = clients.filter((c) => c.name !== name)),
+		addQuery: (q) => void log.push({ ...q, time: q.time ?? new Date() }),
+		setLog: (enabled, hide) => void ((logOn = enabled), (anonymize = hide)),
 		setDown: (d) => void (down = d),
 		close: () => new Promise((resolve) => server.close(() => resolve()))
 	};

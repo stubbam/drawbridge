@@ -144,6 +144,36 @@ export interface AdGuardTest {
 	warnings: string[];
 }
 
+/** One DNS query a client made, from AdGuard Home's query log. */
+export interface DNSQuery {
+	time: string;
+	/** Which of the client's addresses it came from. */
+	address: string;
+	domain: string;
+	/** The record type asked for: A, AAAA, HTTPS, and so on. */
+	type: string;
+	/** The DNS answer's code: NOERROR, NXDOMAIN, SERVFAIL, and so on. */
+	status: string;
+	/** AdGuard Home's filters answered, by the rule below. */
+	blocked: boolean;
+	rule?: string;
+	cached: boolean;
+	answers: string[];
+	elapsed_ms: number;
+}
+
+/** A client's recent DNS queries. `off` means the AdGuard Home integration isn't turned on. */
+export interface DNSLog {
+	state: 'off' | 'ok' | 'error';
+	error?: string;
+	/** The address of AdGuard Home's API, for a link to its own query log. */
+	adguard_url?: string;
+	addresses: string[];
+	queries: DNSQuery[];
+	/** Why an empty list is empty, when AdGuard Home's settings are the reason. */
+	warnings: string[];
+}
+
 export interface Peer {
 	endpoint?: string;
 	last_handshake?: string;
@@ -365,6 +395,8 @@ export const api = {
 		request<AdGuardConnection>('PUT', '/api/integrations/adguard', r),
 	removeAdGuard: () => request<AdGuardConnection>('DELETE', '/api/integrations/adguard'),
 	syncAdGuard: () => request<AdGuardSync>('POST', '/api/integrations/adguard/sync'),
+	clientDnsLog: (id: string, limit?: number) =>
+		request<DNSLog>('GET', clientPath(id, '/dns-log' + (limit ? `?limit=${limit}` : ''))),
 	testAdGuard: (r: AdGuardRequest) =>
 		request<AdGuardTest>('POST', '/api/integrations/adguard/test', r),
 

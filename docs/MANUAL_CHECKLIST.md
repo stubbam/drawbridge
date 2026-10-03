@@ -475,3 +475,16 @@ nothing here is `[VERIFIED]` yet.
 - `[UNVERIFIED]` With AdGuard Home stopped (`sudo systemctl stop AdGuardHome`), the dashboard says
   Drawbridge can't sync, the journal has one `integration adguard sync failed` warning, and starting
   it again clears both within about 5 minutes (or at once with *Sync now*).
+- `[UNVERIFIED]` A client's page has a "Recent DNS Queries" section. With *Use AdGuard Home* on,
+  it lists what that client looked up (from a phone on the VPN, visit a few sites), newest first,
+  with a blocked domain marked "Blocked" and the filter rule. Nothing from another client appears,
+  including one whose address starts with this client's (`10.8.0.2` and `10.8.0.20`). With *Use
+  AdGuard Home* off, the section says how to turn it on.
+- `[UNVERIFIED]` With AdGuard Home's query log off, or *Anonymize client IPs* on, the section of a
+  client with no queries says so, and clears when the setting is changed back and Refresh is
+  pressed. (In a container, anonymizing logged every client as `10.8.0.0`.)
+- `[UNVERIFIED]` "Open this client's queries in AdGuard Home" opens AdGuard Home's query log from
+  another device on the home network, and searches for the client's IPv4 address. The link goes to
+  the host Drawbridge was opened on, so it works only if AdGuard Home's web interface listens on
+  that host's LAN address, not only `127.0.0.1`. Whether this version of AdGuard Home honors the
+  quoted exact-match search in the link is not checked.

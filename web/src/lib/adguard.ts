@@ -34,3 +34,26 @@ export function needsPassword(saved: AdGuardConnection, f: AdGuardForm): boolean
 	const username = f.username.trim();
 	return username !== '' && (f.baseUrl.trim() !== saved.base_url || username !== saved.username);
 }
+
+/**
+ * A link to AdGuard Home's own query log, searching for one address. The saved address is the one
+ * the daemon uses, and for a local install it's 127.0.0.1, which only the host itself can open. So
+ * when it's a loopback address, the link goes to the host the admin is browsing Drawbridge on,
+ * with AdGuard Home's port. Returns "" for an address that isn't a URL.
+ *
+ * @param pageHost the browser's `location.hostname`, brackets and all for an IPv6 address.
+ */
+export function adguardLogsUrl(baseUrl: string, pageHost: string, address?: string): string {
+	let u: URL;
+	try {
+		u = new URL(baseUrl);
+	} catch {
+		return '';
+	}
+	const loopback = /^(localhost|127(\.\d{1,3}){3}|\[::1\])$/i.test(u.hostname);
+	const host = loopback ? pageHost : u.hostname;
+	// The API is at <web address>/control, and the web interface at the web address.
+	const path = u.pathname.replace(/\/+$/, '').replace(/\/control$/, '');
+	const search = address ? `?search=${encodeURIComponent(`"${address}"`)}` : '';
+	return `${u.protocol}//${host}${u.port ? ':' + u.port : ''}${path}/#logs${search}`;
+}

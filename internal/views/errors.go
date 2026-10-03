@@ -155,3 +155,17 @@ func ParseSessionHistoryFilter(q url.Values) (before time.Time, limit int, err e
 	}
 	return before, limit, nil
 }
+
+// ParseDNSLogLimit reads "limit" for a client's DNS log: 1 to service.MaxDNSLogLimit, and
+// service.DefaultDNSLogLimit when it's left out.
+func ParseDNSLogLimit(q url.Values) (int, error) {
+	v := q.Get("limit")
+	if v == "" {
+		return service.DefaultDNSLogLimit, nil
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil || n < 1 || n > service.MaxDNSLogLimit {
+		return 0, &model.InvalidError{Err: fmt.Errorf("limit must be 1–%d, not %q", service.MaxDNSLogLimit, v)}
+	}
+	return n, nil
+}

@@ -616,3 +616,59 @@ func NewAdGuardTest(t service.AdGuardTest) AdGuardTest {
 	out.Warnings = append(out.Warnings, t.Warnings...)
 	return out
 }
+
+// DNSQuery is one DNS query a client made, from AdGuard Home's query log.
+type DNSQuery struct {
+	Time time.Time `json:"time"`
+	// Address is which of the client's addresses it came from.
+	Address netip.Addr `json:"address"`
+	Domain  string     `json:"domain"`
+	// Type is the record type asked for: A, AAAA, HTTPS, and so on.
+	Type string `json:"type"`
+	// Status is the DNS answer's code: NOERROR, NXDOMAIN, SERVFAIL, and so on.
+	Status string `json:"status"`
+	// Blocked means AdGuard Home's filters answered, and Rule is the rule that did.
+	Blocked   bool     `json:"blocked"`
+	Rule      string   `json:"rule,omitempty"`
+	Cached    bool     `json:"cached"`
+	Answers   []string `json:"answers"`
+	ElapsedMs float64  `json:"elapsed_ms"`
+}
+
+// DNSLog is a client's recent DNS queries (docs/PLAN.md §6.3). State is "off" (the AdGuard Home
+// integration isn't turned on), "ok", or "error" (it couldn't be read, and Error says why).
+type DNSLog struct {
+	State string `json:"state"`
+	Error string `json:"error,omitempty"`
+	// AdGuardURL is the address of AdGuard Home's API, for a link to its own query log.
+	AdGuardURL string `json:"adguard_url,omitempty"`
+	// Addresses are the client's, which the queries are from.
+	Addresses []netip.Addr `json:"addresses"`
+	Queries   []DNSQuery   `json:"queries"`
+	// Warnings say why an empty log is empty, when AdGuard Home's settings are the reason.
+	Warnings []string `json:"warnings"`
+}
+
+// NewDNSLog converts the service's DNS log.
+func NewDNSLog(l service.DNSLog) DNSLog {
+	out := DNSLog{
+		State: l.State, Error: l.Error, AdGuardURL: l.BaseURL,
+		Addresses: l.Addresses, Queries: []DNSQuery{}, Warnings: []string{},
+	}
+	if out.Addresses == nil {
+		out.Addresses = []netip.Addr{}
+	}
+	for _, q := range l.Queries {
+		answers := q.Answers
+		if answers == nil {
+			answers = []string{}
+		}
+		out.Queries = append(out.Queries, DNSQuery{
+			Time: q.Time.UTC(), Address: q.Client, Domain: q.Domain, Type: q.Type, Status: q.Status,
+			Blocked: q.Blocked, Rule: q.Rule, Cached: q.Cached, Answers: answers,
+			ElapsedMs: float64(q.Elapsed) / float64(time.Millisecond),
+		})
+	}
+	out.Warnings = append(out.Warnings, l.Warnings...)
+	return out
+}

@@ -309,14 +309,22 @@ func checkAdGuard(ctx context.Context, c *adguard.Client) AdGuardTest {
 	if !st.ProtectionEnabled {
 		res.Warnings = append(res.Warnings, "Protection is off in AdGuard Home, so it isn't blocking anything.")
 	}
-	if res.QueryLog != nil && !res.QueryLog.Enabled {
-		res.Warnings = append(res.Warnings, "AdGuard Home's query log is off, so a client's page can't show what it looked up.")
-	}
-	if res.QueryLog != nil && res.QueryLog.Enabled && res.QueryLog.AnonymizeClientIP {
-		res.Warnings = append(res.Warnings, "AdGuard Home hides the end of each client's address in its query log, "+
-			"so one client's queries can't be picked out.")
+	if res.QueryLog != nil {
+		res.Warnings = append(res.Warnings, queryLogWarnings(*res.QueryLog)...)
 	}
 	return res
+}
+
+// queryLogWarnings says what in AdGuard Home's query-log settings leaves a client's DNS log empty.
+func queryLogWarnings(cfg adguard.LogConfig) []string {
+	switch {
+	case !cfg.Enabled:
+		return []string{"AdGuard Home's query log is off, so a client's page can't show what it looked up."}
+	case cfg.AnonymizeClientIP:
+		return []string{"AdGuard Home hides the end of each client's address in its query log, " +
+			"so one client's queries can't be picked out."}
+	}
+	return nil
 }
 
 // key identifies an account without keeping its password: the same address, username, and

@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/stuffam/drawbridge/internal/adguard/adguardtest"
 	"github.com/stuffam/drawbridge/internal/service"
@@ -163,5 +164,62 @@ func TestAdGuardSyncFlow(t *testing.T) {
 	b.expect(http.StatusOK, "GET", "/api/events?kind=integration.adguard_changed&limit=1", nil).decode(t, &events)
 	if len(events) != 1 || events[0].Data["enabled"] != "off → on" {
 		t.Errorf("events = %+v", events)
+	}
+}
+
+func TestClientDNSLogEndpoint(t *testing.T) {
+	svc := newService(t)
+	srv := newServer(t, svc)
+	b, _ := loggedIn(t, svc, srv)
+	fake := adguardtest.New(t, "drawbridge", "s3cret-pass")
+	var created views.ClientResult
+	b.expect(http.StatusCreated, "POST", "/api/clients", views.NewClientRequest{Name: "phone"}).decode(t, &created)
+	path := "/api/clients/" + created.Client.ID + "/dns-log"
+
+	// Off until the integration is turned on: an answer, with nothing in it, and nothing asked.
+	var log views.DNSLog
+	b.expect(http.StatusOK, "GET", path, nil).decode(t, &log)
+	if log.State != "off" || log.Queries == nil || log.Addresses == nil || log.Warnings == nil || len(fake.Calls()) != 0 {
+		t.Fatalf("log = %+v", log)
+	}
+	b.expect(http.StatusNotFound, "GET", "/api/clients/nobody/dns-log", nil)
+	for _, q := range []string{"0", "201", "-1", "many"} {
+		b.expect(http.StatusBadRequest, "GET", path+"?limit="+q, nil)
+	}
+
+	b.expect(http.StatusOK, "PUT", "/api/integrations/adguard", views.AdGuardRequest{
+		BaseURL: sp(fake.URL()), Username: sp("drawbridge"), Password: sp("s3cret-pass"), Enabled: bp(true), SyncNames: bp(false),
+	})
+	v4, v6 := created.Client.IPv4.String(), created.Client.IPv6.String()
+	now := time.Now().UTC()
+	fake.AddQuery(adguardtest.Entry{Time: now.Add(-3 * time.Minute), Client: v4, Domain: "one.example.com", Answers: []string{"192.0.2.1"}})
+	fake.AddQuery(adguardtest.Entry{Time: now.Add(-2 * time.Minute), Client: "192.0.2.99", Domain: "someone-else.example.com"})
+	fake.AddQuery(adguardtest.Entry{Time: now.Add(-1 * time.Minute), Client: v6, Domain: "ads.example.net", Type: "AAAA", Blocked: true, Rule: "||ads.example.net^"})
+
+	res := b.expect(http.StatusOK, "GET", path, nil)
+	res.decode(t, &log)
+	if log.State != "ok" || log.AdGuardURL != fake.URL() || len(log.Addresses) != 2 || len(log.Queries) != 2 {
+		t.Fatalf("log = %+v", log)
+	}
+	if q := log.Queries[0]; q.Domain != "ads.example.net" || !q.Blocked || q.Rule != "||ads.example.net^" || q.Type != "AAAA" ||
+		q.Address.String() != v6 || q.ElapsedMs != 12.5 || q.Time.IsZero() {
+		t.Errorf("the newest = %+v", q)
+	}
+	if q := log.Queries[1]; q.Domain != "one.example.com" || q.Blocked || q.Rule != "" || len(q.Answers) != 1 || q.Address.String() != v4 {
+		t.Errorf("the other = %+v", q)
+	}
+	if strings.Contains(string(res.body), "s3cret-pass") {
+		t.Error("the password is in the response")
+	}
+	b.expect(http.StatusOK, "GET", path+"?limit=1", nil).decode(t, &log)
+	if len(log.Queries) != 1 || log.Queries[0].Domain != "ads.example.net" {
+		t.Errorf("with a limit of 1: %+v", log.Queries)
+	}
+
+	// An AdGuard Home that can't be read is an answer, too, and it says why.
+	fake.SetDown(true)
+	b.expect(http.StatusOK, "GET", path, nil).decode(t, &log)
+	if log.State != "error" || !strings.Contains(log.Error, "can't reach AdGuard Home") {
+		t.Errorf("an unreachable AdGuard Home: %+v", log)
 	}
 }

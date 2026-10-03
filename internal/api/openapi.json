@@ -1349,6 +1349,60 @@
           }
         ]
       }
+    },
+    "/api/clients/{id}/dns-log": {
+      "get": {
+        "summary": "A client's recent DNS queries",
+        "description": "What the client has looked up lately, newest first, from AdGuard Home's query log (docs/PLAN.md §6.3). AdGuard Home's search matches part of an address, so the server keeps only the entries from exactly this client's addresses and looks through up to 1,000 entries for each. With the AdGuard Home integration off, `state` is `off` and nothing is asked. When AdGuard Home can't be read, `state` is `error` and `error` says why: if it refused the account, it isn't asked again until the connection changes or a test shows the account works. Read-only, and not recorded as an event.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50
+            },
+            "description": "How many queries to return at most."
+          }
+        ],
+        "responses": {
+          "401": {
+            "$ref": "#/components/responses/NotLoggedIn"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "200": {
+            "description": "The queries, or why there are none.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DNSLog"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Invalid"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        },
+        "tags": [
+          "clients"
+        ]
+      }
     }
   },
   "components": {
@@ -2348,6 +2402,108 @@
                 }
               }
             }
+          }
+        }
+      },
+      "DNSLog": {
+        "type": "object",
+        "required": [
+          "state",
+          "addresses",
+          "queries",
+          "warnings"
+        ],
+        "properties": {
+          "state": {
+            "type": "string",
+            "enum": [
+              "off",
+              "ok",
+              "error"
+            ],
+            "description": "`off`: the AdGuard Home integration isn't turned on. `ok`: AdGuard Home answered; the list may still be empty. `error`: it couldn't be read."
+          },
+          "error": {
+            "type": "string",
+            "description": "Why the log couldn't be read, in words for the admin."
+          },
+          "adguard_url": {
+            "type": "string",
+            "description": "The address of AdGuard Home's API, for a link to its own query log. Absent when `state` is `off`."
+          },
+          "addresses": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "The client's addresses, which the queries are from."
+          },
+          "queries": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "time",
+                "address",
+                "domain",
+                "type",
+                "status",
+                "blocked",
+                "cached",
+                "answers",
+                "elapsed_ms"
+              ],
+              "properties": {
+                "time": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "address": {
+                  "type": "string",
+                  "description": "Which of the client's addresses the query came from."
+                },
+                "domain": {
+                  "type": "string"
+                },
+                "type": {
+                  "type": "string",
+                  "description": "The record type asked for: A, AAAA, HTTPS, and so on."
+                },
+                "status": {
+                  "type": "string",
+                  "description": "The DNS answer's code: NOERROR, NXDOMAIN, SERVFAIL, and so on."
+                },
+                "blocked": {
+                  "type": "boolean",
+                  "description": "AdGuard Home's filters answered instead of an upstream resolver."
+                },
+                "rule": {
+                  "type": "string",
+                  "description": "The filter rule that blocked it. Absent when none did."
+                },
+                "cached": {
+                  "type": "boolean"
+                },
+                "answers": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "What it answered with, such as addresses."
+                },
+                "elapsed_ms": {
+                  "type": "number",
+                  "description": "How long AdGuard Home took to answer."
+                }
+              }
+            }
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Why an empty list is empty, when AdGuard Home's query-log settings are the reason (it's off, or it hides client addresses)."
           }
         }
       }

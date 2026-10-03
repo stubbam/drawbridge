@@ -87,3 +87,18 @@ func (h *handler) testAdGuard(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, views.NewAdGuardTest(res))
 }
+
+// clientDNSLog returns what a client has looked up lately, from AdGuard Home's query log.
+func (h *handler) clientDNSLog(w http.ResponseWriter, r *http.Request) {
+	limit, err := views.ParseDNSLogLimit(r.URL.Query())
+	if err != nil {
+		h.fail(w, err)
+		return
+	}
+	log, err := h.svc.ClientDNSLog(r.Context(), clientRef(r), limit)
+	if err != nil {
+		h.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, views.NewDNSLog(log))
+}

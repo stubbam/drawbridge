@@ -72,6 +72,7 @@ var routes = []route{
 	{"GET", "/api/clients/{id}/config", false, (*handler).clientConfig},
 	{"GET", "/api/clients/{id}/traffic", false, (*handler).clientTraffic},
 	{"GET", "/api/clients/{id}/sessions", false, (*handler).clientSessions},
+	{"GET", "/api/clients/{id}/dns-log", false, (*handler).clientDNSLog},
 	{"GET", "/api/traffic", false, (*handler).totalTraffic},
 	{"GET", "/api/traffic/clients", false, (*handler).clientsTraffic},
 	{"GET", "/api/integrations/adguard", false, (*handler).getAdGuard},

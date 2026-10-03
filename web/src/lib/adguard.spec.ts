@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { AdGuardConnection } from './api';
-import { adguardRequest, needsPassword } from './adguard';
+import { adguardLogsUrl, adguardRequest, needsPassword } from './adguard';
 
 const saved: AdGuardConnection = {
 	configured: true,
@@ -63,5 +63,38 @@ describe('needsPassword', () => {
 			false
 		);
 		expect(needsPassword(saved, { ...same, username: '  ' })).toBe(false);
+	});
+});
+
+describe('adguardLogsUrl', () => {
+	it("opens a local install on the host the admin is browsing, at AdGuard Home's port", () => {
+		expect(adguardLogsUrl('http://127.0.0.1:3000/control', 'pi.example.com', '10.8.0.2')).toBe(
+			'http://pi.example.com:3000/#logs?search=%2210.8.0.2%22'
+		);
+		expect(adguardLogsUrl('http://localhost:3000/control', '192.168.4.10')).toBe(
+			'http://192.168.4.10:3000/#logs'
+		);
+		expect(adguardLogsUrl('http://[::1]:3000/control', '[2001:db8::10]', 'fd00::2')).toBe(
+			'http://[2001:db8::10]:3000/#logs?search=%22fd00%3A%3A2%22'
+		);
+	});
+
+	it('keeps the address of an AdGuard Home that is somewhere else', () => {
+		expect(adguardLogsUrl('https://dns.example.com/control', 'pi.example.com', '10.8.0.2')).toBe(
+			'https://dns.example.com/#logs?search=%2210.8.0.2%22'
+		);
+		expect(adguardLogsUrl('http://192.0.2.5:3000/control/', 'pi.example.com')).toBe(
+			'http://192.0.2.5:3000/#logs'
+		);
+	});
+
+	it('keeps a path the web interface is served under', () => {
+		expect(adguardLogsUrl('https://example.com/adguard/control', 'pi.example.com')).toBe(
+			'https://example.com/adguard/#logs'
+		);
+	});
+
+	it('gives nothing for an address that is not a URL', () => {
+		expect(adguardLogsUrl('not a url', 'pi.example.com')).toBe('');
 	});
 });

@@ -14,8 +14,9 @@ Drawbridge is a self-hosted web manager for a WireGuard VPN server. It installs 
 
 It supports both IPv4 and IPv6. wg-easy is the feature reference; none of its code is used.
 
-**Status: M0–M3 are built, the session tracker and traffic history from M4 shipped ahead of
-the rest of it (2026-09-26–28), and `drawbridge doctor` from M5 followed (2026-09-29). Nearly
+**Status: M0–M4 are built (the session tracker and traffic history shipped ahead of the rest of
+M4, 2026-09-26–28, and the AdGuard Home integration finished it, 2026-10-03), and
+`drawbridge doctor` from M5 followed (2026-09-29). Nearly
 every check in docs/MANUAL_CHECKLIST.md has passed on the reference platform (a Raspberry Pi 5
 running Debian 13); what's left there needs a laptop, a second Tailscale device, or a few days of
 traffic history.
@@ -44,8 +45,8 @@ setups.** What exists:
   new events from a Server-Sent Events stream (`GET /api/stream`, `internal/api/stream.go`,
   `web/src/lib/live.svelte.ts`), and poll only when it can't be had. Also ahead of the rest of M4
   (AdGuard Home integration: the API client `internal/adguard`, the connection saved and tested
-  from Settings, and client name sync, `internal/service/adguardsync.go`, are built; the
-  per-client DNS log isn't).
+  from Settings, client name sync, `internal/service/adguardsync.go`, and a client's DNS log,
+  `internal/service/dnslog.go`, are all built).
 - The CLI, which talks to the daemon over the control socket: `server show|set`,
   `client list|add|show|pause|resume|rename|delete|config|qr`, `events`, `doctor`, and
   `admin setup-token|create|reset-password`.

@@ -595,19 +595,72 @@ func TestFormatting(t *testing.T) {
 	}
 }
 
+// TestMain keeps the machine's own journal out of the tests. A test machine can itself run
+// under systemd (a CI runner does), which sets JOURNAL_STREAM and makes the daemon log to the
+// real journal, and then the tests that read its standard error find nothing. The tests that
+// want the journal set the variable themselves, and name a socket of their own.
+func TestMain(m *testing.M) {
+	_ = os.Unsetenv("JOURNAL_STREAM")
+	os.Exit(m.Run())
+}
+
 func TestLoggerDropsTimeUnderJournald(t *testing.T) {
 	var buf bytes.Buffer
+	missing := filepath.Join(t.TempDir(), "no-journal.sock")
 	t.Setenv("JOURNAL_STREAM", "8:12345")
-	newLogger(&buf).Info("hello")
+	newLoggerAt(&buf, missing).Info("hello")
 	if strings.Contains(buf.String(), "time=") {
 		t.Fatalf("log line %q has a timestamp; journald adds its own", buf.String())
+	}
+	if !strings.Contains(buf.String(), "hello") {
+		t.Fatalf("log line %q: with no journal to reach, the text goes to the writer", buf.String())
 	}
 
 	buf.Reset()
 	t.Setenv("JOURNAL_STREAM", "")
-	newLogger(&buf).Info("hello")
+	newLoggerAt(&buf, missing).Info("hello")
 	if !strings.Contains(buf.String(), "time=") {
 		t.Fatalf("log line %q has no timestamp outside journald", buf.String())
+	}
+}
+
+func TestLoggerSendsFieldsToJournald(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "journal.sock")
+	conn, err := net.ListenUnixgram("unixgram", &net.UnixAddr{Name: path, Net: "unixgram"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	read := func() string {
+		buf := make([]byte, 64<<10)
+		_ = conn.SetReadDeadline(time.Now().Add(250 * time.Millisecond))
+		n, _ := conn.Read(buf)
+		return string(buf[:n])
+	}
+
+	// Under systemd, a record is a journal entry with its attributes as fields, and the
+	// writer (standard error) gets nothing, so the journal doesn't have it twice.
+	var buf bytes.Buffer
+	t.Setenv("JOURNAL_STREAM", "8:12345")
+	newLoggerAt(&buf, path).Info("client added", "client", "phone")
+	entry := read()
+	for _, want := range []string{"PRIORITY=6\n", "DRAWBRIDGE_CLIENT=phone\n", `MESSAGE=level=INFO msg="client added" client=phone` + "\n"} {
+		if !strings.Contains(entry, want) {
+			t.Errorf("entry %q lacks %q", entry, want)
+		}
+	}
+	if buf.Len() != 0 {
+		t.Errorf("standard error got %q as well", buf.String())
+	}
+
+	// Run by hand, the daemon logs to the terminal, and never to the journal of the host.
+	t.Setenv("JOURNAL_STREAM", "")
+	newLoggerAt(&buf, path).Info("by hand")
+	if entry := read(); entry != "" {
+		t.Errorf("a daemon run by hand wrote %q to the journal", entry)
+	}
+	if !strings.Contains(buf.String(), "by hand") {
+		t.Errorf("a daemon run by hand logged %q to the terminal", buf.String())
 	}
 }
 

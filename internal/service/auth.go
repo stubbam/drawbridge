@@ -123,7 +123,6 @@ func (s *Service) CompleteSetup(ctx context.Context, token, username, password, 
 		return Login{}, err
 	}
 	s.Limiter.Succeed(src)
-	s.Log.Info("setup complete: admin account created", "username", u.Username)
 	s.record(ctx, Event{Kind: "auth.setup_completed", Actor: u.Username})
 	return s.startSession(ctx, u, userAgent)
 }
@@ -295,7 +294,6 @@ func (s *Service) CreateAdmin(ctx context.Context, username string) (string, err
 	if _, err := s.Store.CreateUser(ctx, username, hash); err != nil {
 		return "", err
 	}
-	s.Log.Info("admin account created from the CLI", "username", username)
 	s.record(ctx, Event{Kind: "auth.admin_created", Data: map[string]string{"username": username}})
 	return password, nil
 }
@@ -328,7 +326,6 @@ func (s *Service) ResetPassword(ctx context.Context, username string) (store.Use
 		return store.User{}, "", err
 	}
 	s.Limiter.Succeed(auth.AccountKey(u.ID))
-	s.Log.Info("admin password reset from the CLI", "username", u.Username)
 	s.record(ctx, Event{Kind: "auth.password_reset", Data: map[string]string{"username": u.Username}})
 	return u, password, nil
 }

@@ -11,8 +11,8 @@ in the product name.
 
 > Status: **M0–M3 are built** (the tunnel, the CLI, the authenticated API, and the web UI), and
 > so are the session tracker and traffic history from M4. The kernel tests pass in CI, and
-> `docs/MANUAL_CHECKLIST.md` records what has run on real hardware. The rest of M4 (structured
-> journald fields, the SSE stream, and AdGuard Home integration) is next.
+> `docs/MANUAL_CHECKLIST.md` records what has run on real hardware. The rest of M4 (the SSE
+> stream, the write-budget test, and AdGuard Home integration) is next.
 > `drawbridge doctor`, the first slice of M5, is built too; the diagnostics page isn't.
 > `docs/REQUIREMENTS.md` lists what the host and network need, and the known roadblocks.
 
@@ -545,8 +545,8 @@ page's bandwidth and cumulative charts, and its session-history list are built t
 the whole app, remembered in the browser. A Charts page (an icon in the header, between Clients
 and Server Settings) shows the same history per client, as Received, Sent, Cumulative Received,
 and Cumulative Sent charts, stacked (`GET /api/traffic/clients`). The log viewer's filters and CSV
-export are built too (below). Structured journald fields and AdGuard Home integration (§6.3) are
-still pending.*
+export are built too (below), and so are the structured journald fields. AdGuard Home integration
+(§6.3) is still pending.*
 
 ```mermaid
 stateDiagram-v2
@@ -623,8 +623,23 @@ stateDiagram-v2
   transaction, and a periodic job rolls old raw rows up into hourly ones, then prunes both past
   their retention windows. This keeps SD card writes low (and stays low on an SSD too, unless the
   admin explicitly widens the budget above).
-- **journald:** each event is also logged as structured JSON (`journalctl -u drawbridge`). A
-  `DRAWBRIDGE_CLIENT=` field makes it possible to filter by client.
+- **journald:** under systemd, every event is also a journal entry, sent with journald's native
+  protocol (`internal/journal`), so its parts are fields and not only text:
+  `DRAWBRIDGE_EVENT` (`client.connected`), `DRAWBRIDGE_CATEGORY`, `DRAWBRIDGE_ACTOR`,
+  `DRAWBRIDGE_VIA`, `DRAWBRIDGE_SOURCE_IP`, `DRAWBRIDGE_CLIENT` (the name then) and
+  `DRAWBRIDGE_CLIENT_ID`, and `DRAWBRIDGE_DATA_<KEY>` for each detail. `journalctl -u drawbridge
+  DRAWBRIDGE_CLIENT=phone` is one client's history, `DRAWBRIDGE_CATEGORY=connection` is every
+  connection, and `-o json` has all the fields. The entry's priority follows the level, so
+  `journalctl -p warning` shows what needs reading: a failed login and corrected drift are
+  warnings. The `MESSAGE` is the line the text log always had (level, message, and every
+  attribute), so the plain `journalctl` output reads as before. Every other log line is an entry
+  the same way, with its attributes as `DRAWBRIDGE_<KEY>` fields. The `DRAWBRIDGE_` prefix keeps
+  a key from taking a name journald reserves, and a value, even a stranger's failed-login name
+  with newlines in it, is only ever one field's value. The daemon sends the entry before it
+  stores the event, so the journal has it even when the database can't take it. The daemon
+  logs this way only when systemd says its output goes to the journal (`JOURNAL_STREAM`). Run
+  by hand, it logs text to the terminal, and when the journal can't be reached the text goes to
+  standard error.
 - **DNS queries:** what each client looked up comes from AdGuard Home's query log (§6.3), which
   has its own retention settings.
 - **"Online" is a heuristic.** An idle client without keepalive shows as *idle* after about
@@ -1062,7 +1077,7 @@ Each milestone ends in a usable, tested state.
   retention, charts, the log viewer with filters and CSV export, and journald structured logs.
   *Built: the session tracker, its three events, and `client_sessions`; traffic sampling with
   rollup and retention, the dashboard, client-detail, and Charts pages, and the log viewer's
-  filters and CSV export (§6.4). Not built yet: structured journald fields, the SSE stream, the
+  filters and CSV export (§6.4), and structured journald fields. Not built yet: the SSE stream, the
   write-budget test, and the AdGuard Home integration.*
 - AdGuard Home integration: client name sync and the per-client DNS log.
 - **Exit:**

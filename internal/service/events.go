@@ -2,6 +2,10 @@ package service
 
 import (
 	"context"
+	"log/slog"
+	"maps"
+	"slices"
+	"strings"
 
 	"github.com/stuffam/drawbridge/internal/model"
 	"github.com/stuffam/drawbridge/internal/store"
@@ -79,10 +83,47 @@ func (s *Service) record(ctx context.Context, e Event) {
 	if e.Client != nil {
 		se.ClientID, se.ClientName = e.Client.ID, e.Client.Name
 	}
+	// The journal gets the event first, so it has it even when the database can't take it.
+	s.logEvent(ctx, se)
 	// The event outlives the request that caused it.
 	if err := s.Store.AddEvent(context.WithoutCancel(ctx), se); err != nil {
 		s.Log.Warn("can't record an event", "kind", e.Kind, "err", err)
 	}
+}
+
+// logEvent writes an event to the log, for the journal (`journalctl -u drawbridge`). Its
+// parts are attributes, which journald keeps as fields of their own (DRAWBRIDGE_EVENT,
+// DRAWBRIDGE_CLIENT, and so on), so the journal can be filtered the way the event log is.
+// Failures are warnings, and so is drift, because someone should read them.
+func (s *Service) logEvent(ctx context.Context, e store.Event) {
+	attrs := []slog.Attr{
+		slog.String("event", e.Kind),
+		slog.String("category", e.Category),
+		slog.String("actor", e.Actor),
+		slog.String("via", e.Via),
+	}
+	if e.SourceIP != "" {
+		attrs = append(attrs, slog.String("source_ip", e.SourceIP))
+	}
+	if e.ClientName != "" {
+		attrs = append(attrs, slog.String("client", e.ClientName))
+	}
+	if e.ClientID != "" {
+		attrs = append(attrs, slog.String("client_id", e.ClientID))
+	}
+	if len(e.Data) > 0 {
+		data := make([]slog.Attr, 0, len(e.Data))
+		for _, k := range slices.Sorted(maps.Keys(e.Data)) {
+			data = append(data, slog.String(k, e.Data[k]))
+		}
+		attrs = append(attrs, slog.Attr{Key: "data", Value: slog.GroupValue(data...)})
+	}
+	level := slog.LevelInfo
+	if strings.HasSuffix(e.Kind, "_failed") || e.Kind == "tunnel.drift_corrected" {
+		level = slog.LevelWarn
+	}
+	// "client.config_viewed" reads as "client config viewed".
+	s.Log.LogAttrs(ctx, level, strings.NewReplacer(".", " ", "_", " ").Replace(e.Kind), attrs...)
 }
 
 // Events returns recorded events, newest first.

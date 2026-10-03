@@ -14,6 +14,7 @@ import (
 	"syscall"
 
 	"github.com/stuffam/drawbridge/internal/control"
+	"github.com/stuffam/drawbridge/internal/journal"
 	"github.com/stuffam/drawbridge/internal/store"
 	"github.com/stuffam/drawbridge/internal/version"
 )
@@ -136,11 +137,23 @@ func rulesetPath(db string) string {
 	return filepath.Join(filepath.Dir(db), "nftables.conf")
 }
 
-// newLogger logs text to w. Under systemd, journald adds its own timestamps, so the
-// logger leaves them out.
-func newLogger(w io.Writer) *slog.Logger {
+// newLogger logs to the journal when the daemon runs under systemd, and as text to w
+// otherwise.
+func newLogger(w io.Writer) *slog.Logger { return newLoggerAt(w, journal.Socket) }
+
+// newLoggerAt is newLogger with the journal's socket named. Under systemd (it sets
+// JOURNAL_STREAM when a service's output goes to the journal), records go to journald's
+// native protocol, which keeps their attributes as fields: `journalctl -u drawbridge
+// DRAWBRIDGE_CLIENT=phone`. Journald adds its own timestamps, so the text of a record,
+// which it keeps as the entry's MESSAGE, leaves the time out. If the journal can't be
+// reached, w gets the text, and under systemd that's the same journal by way of standard
+// error.
+func newLoggerAt(w io.Writer, socket string) *slog.Logger {
 	opts := &slog.HandlerOptions{}
 	if os.Getenv("JOURNAL_STREAM") != "" {
+		if h, err := journal.NewHandler(socket, w); err == nil {
+			return slog.New(h)
+		}
 		opts.ReplaceAttr = func(groups []string, a slog.Attr) slog.Attr {
 			if len(groups) == 0 && a.Key == slog.TimeKey {
 				return slog.Attr{}

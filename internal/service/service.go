@@ -166,7 +166,6 @@ func (s *Service) UpdateSettings(ctx context.Context, p SettingsPatch) (model.Se
 	if len(changes) == 0 {
 		return updated, Applied{}, nil
 	}
-	s.Log.Info("server settings changed")
 	s.record(ctx, Event{Kind: "server.settings_changed", Data: changes})
 	return updated, s.apply(ctx, "server settings"), nil
 }
@@ -323,7 +322,6 @@ func (s *Service) AddClient(ctx context.Context, name string) (model.Client, App
 	if err != nil {
 		return model.Client{}, Applied{}, err
 	}
-	s.Log.Info("client added", "client", c.Name, "ipv4", c.IPv4)
 	s.record(ctx, Event{Kind: "client.added", Client: &c, Data: map[string]string{
 		"ipv4": c.IPv4.String(), "ipv6": addrString(c.IPv6),
 	}})
@@ -347,7 +345,6 @@ func (s *Service) SetEnabled(ctx context.Context, ref store.Ref, enabled bool) (
 	if enabled {
 		what = "resumed"
 	}
-	s.Log.Info("client "+what, "client", c.Name)
 	s.record(ctx, Event{Kind: "client." + what, Client: &c})
 	return c, s.apply(ctx, "the "+what+" client"), nil
 }
@@ -363,7 +360,6 @@ func (s *Service) RenameClient(ctx context.Context, ref store.Ref, name string) 
 		return model.Client{}, err
 	}
 	if c.Name != before.Name {
-		s.Log.Info("client renamed", "from", before.Name, "to", c.Name)
 		s.record(ctx, Event{Kind: "client.renamed", Client: &c, Data: map[string]string{"from": before.Name}})
 	}
 	return c, nil
@@ -375,7 +371,6 @@ func (s *Service) DeleteClient(ctx context.Context, ref store.Ref) (model.Client
 	if err != nil {
 		return model.Client{}, Applied{}, err
 	}
-	s.Log.Info("client deleted", "client", c.Name)
 	s.record(ctx, Event{Kind: "client.deleted", Client: &c})
 	return c, s.apply(ctx, "the deleted client"), nil
 }
@@ -407,7 +402,6 @@ func (s *Service) Sync(ctx context.Context) {
 	case err != nil:
 		s.Log.Error("reconcile failed", "err", err)
 	case len(res.Changes) > 0:
-		s.Log.Warn("corrected drift", "changes", res.Changes)
 		s.record(ctx, Event{Kind: "tunnel.drift_corrected", Category: CategorySystem,
 			Data: map[string]string{"changes": strings.Join(res.Changes, "; ")}})
 	}

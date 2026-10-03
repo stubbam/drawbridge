@@ -483,8 +483,9 @@ nothing here is `[VERIFIED]` yet.
 - `[UNVERIFIED]` With AdGuard Home's query log off, or *Anonymize client IPs* on, the section of a
   client with no queries says so, and clears when the setting is changed back and Refresh is
   pressed. (In a container, anonymizing logged every client as `10.8.0.0`.)
-- `[UNVERIFIED]` "Open this client's queries in AdGuard Home" opens AdGuard Home's query log from
-  another device on the home network, and searches for the client's IPv4 address. The link goes to
-  the host Drawbridge was opened on, so it works only if AdGuard Home's web interface listens on
-  that host's LAN address, not only `127.0.0.1`. Whether this version of AdGuard Home honors the
-  quoted exact-match search in the link is not checked.
+- `[VERIFIED 2026-10-03]` AdGuard Home honors the search in "Open this client's queries in
+  AdGuard Home" (`#logs?search="10.8.0.2"`, the address in quotes) as an exact match on the
+  client's address. Confirmed by the maintainer.
+- `[UNVERIFIED]` That link opens AdGuard Home's query log from another device on the home network.
+  It goes to the host Drawbridge was opened on, so it works only if AdGuard Home's web interface
+  listens on that host's LAN address, not only `127.0.0.1`.

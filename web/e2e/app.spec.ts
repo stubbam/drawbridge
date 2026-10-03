@@ -5,6 +5,7 @@ import {
 	cli,
 	login,
 	logOut,
+	mockTraffic,
 	navigate,
 	openUserMenu,
 	setupToken,
@@ -267,6 +268,94 @@ test('the dashboard lists clients and links its tiles to a filtered list', async
 	await page.getByRole('button', { name: 'View online clients' }).click();
 	await expect(page).toHaveURL(/\/clients\?state=online$/);
 	await expect(page.getByText('No client is online.')).toBeVisible();
+});
+
+test("the dashboard's boxes open their pages, and say so when the pointer is over them", async ({
+	page
+}) => {
+	// laptop, tablet, and desk exist from the earlier tests.
+	await mockTraffic(page);
+	await login(page);
+	const border = (l: Locator) => l.evaluate((el) => getComputedStyle(el).borderTopColor);
+	const bandwidth = page.getByRole('region', { name: 'Bandwidth' });
+	const server = page.getByRole('region', { name: 'Server', exact: true });
+	const clients = page.getByRole('region', { name: 'Clients', exact: true });
+	const tile = page.getByRole('button', { name: 'View all clients' });
+	await expect(bandwidth.locator('.u-over')).toHaveCount(1);
+	await expect(server.getByText('vpn.example.com:51820')).toBeVisible();
+
+	// The pointer over a box turns its outline blue, the same blue as the tiles at the top, and
+	// the pointer becomes a hand. The color eases in, so it's read once it has stopped changing.
+	const settled = async (l: Locator) => {
+		let previous = await border(l);
+		for (;;) {
+			await page.waitForTimeout(100);
+			const now = await border(l);
+			if (now === previous) return now;
+			previous = now;
+		}
+	};
+	const resting = await border(server);
+	await tile.hover();
+	const hovered = await settled(tile);
+	expect(hovered).not.toBe(resting);
+	for (const box of [bandwidth, server, clients]) {
+		await page.mouse.move(0, 0);
+		const before = await settled(box);
+		expect(before).not.toBe(hovered);
+		await box.hover({ position: { x: 6, y: 6 } });
+		expect(await settled(box)).toBe(hovered);
+		await expect(box).toHaveCSS('cursor', 'pointer');
+		await page.mouse.move(0, 0);
+		expect(await settled(box)).toBe(before);
+	}
+
+	// A click on a box, not on something in it, opens its page: the chart's page for Bandwidth, the
+	// settings for Server, and the clients for Clients.
+	for (const [box, url] of [
+		[bandwidth, /\/charts$/],
+		[server, /\/settings$/],
+		[clients, /\/clients$/]
+	] as const) {
+		await box.click({ position: { x: 6, y: 6 } });
+		await expect(page).toHaveURL(url);
+		await page.goBack();
+		await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible();
+	}
+	// The chart is part of the box, though the pointer over it still shows its readout.
+	await bandwidth.locator('.u-over').click();
+	await expect(page).toHaveURL(/\/charts$/);
+	await page.goBack();
+
+	// The old links are gone: the box is the link, and so is its heading, for the keyboard.
+	await expect(server.getByRole('link', { name: 'Settings', exact: true })).toHaveCount(0);
+	await expect(page.getByRole('link', { name: 'All Clients' })).toHaveCount(0);
+	await server.getByRole('link', { name: 'Server', exact: true }).focus();
+	await page.keyboard.press('Enter');
+	await expect(page).toHaveURL(/\/settings$/);
+	await page.goBack();
+
+	// What does something of its own still does it: a client's name opens the client, a control
+	// changes what it controls, and the box stays where it is.
+	await clients.getByRole('link', { name: 'laptop' }).click();
+	await expect(page).toHaveURL(/\/clients\/[^/]+$/);
+	await page.goBack();
+	await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible();
+	await bandwidth.getByLabel('Range').selectOption('1h');
+	await clients.getByLabel('Sort by').selectOption('status');
+	await server.getByRole('button', { name: /copy/i }).click();
+	await expect(page).toHaveURL(/\/$/);
+
+	// Dragging across a box's text selects it, and doesn't open the page, so it can be copied.
+	const endpoint = await server.getByText('vpn.example.com:51820').boundingBox();
+	await page.mouse.move(endpoint!.x + 1, endpoint!.y + endpoint!.height / 2);
+	await page.mouse.down();
+	await page.mouse.move(endpoint!.x + endpoint!.width - 1, endpoint!.y + endpoint!.height / 2, {
+		steps: 8
+	});
+	await page.mouse.up();
+	await expect(page).toHaveURL(/\/$/);
+	expect(await page.evaluate(() => getSelection()?.toString())).toContain('vpn.example');
 });
 
 test('the dashboard and the client list sort, and remember the order', async ({ page }) => {

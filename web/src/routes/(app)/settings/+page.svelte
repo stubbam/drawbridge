@@ -3,6 +3,7 @@
 	import { api, type Settings, type SettingsPatch } from '$lib/api';
 	import { errorMessage } from '$lib/errors';
 	import CopyButton from '$lib/components/CopyButton.svelte';
+	import AdGuardSettings from '$lib/components/AdGuardSettings.svelte';
 	import DNSFields from '$lib/components/DNSFields.svelte';
 	import Result from '$lib/components/Result.svelte';
 	import { dnsFor, dnsModeOf, type DNSMode } from '$lib/dns';
@@ -193,6 +194,8 @@
 			</button>
 		</div>
 	</form>
+
+	<AdGuardSettings />
 
 	<section class="card flex flex-col gap-3" aria-labelledby="addressing-heading">
 		<h2 id="addressing-heading" class="font-semibold">Addressing</h2>

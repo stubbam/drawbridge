@@ -19,6 +19,9 @@
       "name": "events"
     },
     {
+      "name": "integrations"
+    },
+    {
       "name": "system"
     }
   ],
@@ -1169,6 +1172,151 @@
           "events"
         ]
       }
+    },
+    "/api/integrations/adguard": {
+      "get": {
+        "summary": "Get the connection to AdGuard Home",
+        "description": "The address, the account's username, and whether a password is saved. The password is never returned. With nothing saved, `base_url` is the usual address of a local AdGuard Home, to start from.",
+        "responses": {
+          "401": {
+            "$ref": "#/components/responses/NotLoggedIn"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "200": {
+            "description": "The saved connection.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdGuardConnection"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "integrations"
+        ]
+      },
+      "put": {
+        "summary": "Save the connection to AdGuard Home",
+        "description": "Saves the address and the account of an AdGuard Home that Drawbridge may call. Omitted fields stay as they are. It doesn't contact AdGuard Home: the test does that, on values that aren't saved yet. The saved password is sent only to the address and account it was saved with, so changing either takes a password in the same request (400 otherwise). Recorded as an `integration.adguard_changed` event that says the password changed, never what it is.",
+        "responses": {
+          "401": {
+            "$ref": "#/components/responses/NotLoggedIn"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "200": {
+            "description": "The saved connection.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdGuardConnection"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Invalid"
+          }
+        },
+        "tags": [
+          "integrations"
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CSRF"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdGuardRequest"
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Remove the connection to AdGuard Home",
+        "description": "Forgets the address and the account, and the saved password with them. Removing a connection that isn't there is not an error. Recorded as an `integration.adguard_removed` event.",
+        "responses": {
+          "401": {
+            "$ref": "#/components/responses/NotLoggedIn"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "200": {
+            "description": "What's saved now: nothing, with the usual address to start from.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdGuardConnection"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "integrations"
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CSRF"
+          }
+        ]
+      }
+    },
+    "/api/integrations/adguard/test": {
+      "post": {
+        "summary": "Test the connection to AdGuard Home",
+        "description": "Asks AdGuard Home who it is, with the saved connection and the request's values applied on top, and saves nothing. The body is optional: without one, the saved connection is tested. Also asks the server's VPN addresses for DNS, so one result says whether AdGuard Home answers there. A connection that doesn't work is a 200 with `ok` false and the reason in `error`, not an error status. If AdGuard Home refuses the account, `refused` is true, and the same account isn't tried again for 30 seconds, because AdGuard Home blocks an address for 15 minutes after five refusals. Changing the address or the username takes a password in the same request (400 otherwise).",
+        "responses": {
+          "401": {
+            "$ref": "#/components/responses/NotLoggedIn"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "200": {
+            "description": "What the test found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdGuardTest"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Invalid"
+          }
+        },
+        "tags": [
+          "integrations"
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CSRF"
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdGuardRequest"
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -1939,6 +2087,147 @@
           },
           "send_bytes": {
             "type": "integer"
+          }
+        }
+      },
+      "AdGuardConnection": {
+        "type": "object",
+        "required": [
+          "configured",
+          "base_url",
+          "username",
+          "has_password"
+        ],
+        "properties": {
+          "configured": {
+            "type": "boolean",
+            "description": "Whether a connection is saved."
+          },
+          "base_url": {
+            "type": "string",
+            "description": "The address of AdGuard Home's API, such as `http://127.0.0.1:3000/control`. When nothing is saved, the usual address of a local AdGuard Home."
+          },
+          "username": {
+            "type": "string",
+            "description": "The account's username. Empty when AdGuard Home has no login."
+          },
+          "has_password": {
+            "type": "boolean",
+            "description": "Whether a password is saved. The password itself is never returned."
+          }
+        }
+      },
+      "AdGuardRequest": {
+        "type": "object",
+        "description": "Omitted fields stay as they are.",
+        "properties": {
+          "base_url": {
+            "type": "string",
+            "description": "An http or https address, with no account in it. `http://127.0.0.1:3000` is enough: `/control` is added when there's no path."
+          },
+          "username": {
+            "type": "string",
+            "description": "At most 128 characters, no colon. Empty means AdGuard Home has no login, and drops the saved password."
+          },
+          "password": {
+            "type": "string",
+            "description": "Replaces the saved password; an empty string removes it. Required when `base_url` or `username` changes."
+          }
+        }
+      },
+      "AdGuardTest": {
+        "type": "object",
+        "required": [
+          "ok",
+          "refused",
+          "running",
+          "protection_enabled",
+          "query_log",
+          "dns",
+          "warnings"
+        ],
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "description": "AdGuard Home answered and accepted the account."
+          },
+          "error": {
+            "type": "string",
+            "description": "Why not, in words for the admin. Absent when `ok` is true."
+          },
+          "refused": {
+            "type": "boolean",
+            "description": "AdGuard Home refused the account. Trying again won't help."
+          },
+          "version": {
+            "type": "string",
+            "description": "AdGuard Home's version, such as `v0.107.79`."
+          },
+          "running": {
+            "type": "boolean",
+            "description": "Whether AdGuard Home's DNS server is running."
+          },
+          "protection_enabled": {
+            "type": "boolean",
+            "description": "Whether its filtering is on."
+          },
+          "query_log": {
+            "description": "How AdGuard Home's query log is set; null when it couldn't be read.",
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "object",
+                "required": [
+                  "enabled",
+                  "anonymize_client_ip"
+                ],
+                "properties": {
+                  "enabled": {
+                    "type": "boolean",
+                    "description": "Whether AdGuard Home keeps a query log."
+                  },
+                  "anonymize_client_ip": {
+                    "type": "boolean",
+                    "description": "It hides the end of each client's address, so one client's queries can't be picked out."
+                  }
+                }
+              }
+            ]
+          },
+          "dns": {
+            "type": "array",
+            "description": "What asking each of the server's VPN addresses for DNS found, IPv4 first, whatever AdGuard Home said.",
+            "items": {
+              "type": "object",
+              "required": [
+                "address",
+                "answered",
+                "detail"
+              ],
+              "properties": {
+                "address": {
+                  "type": "string",
+                  "description": "The server's address on the VPN."
+                },
+                "answered": {
+                  "type": "boolean",
+                  "description": "A resolver replied with a usable answer (a name, or a clean \"no such name\")."
+                },
+                "detail": {
+                  "type": "string",
+                  "description": "What happened, in words for the admin."
+                }
+              }
+            }
+          },
+          "warnings": {
+            "type": "array",
+            "description": "Things that work against what the integration is for, in words for the admin.",
+            "items": {
+              "type": "string"
+            }
           }
         }
       }

@@ -83,6 +83,40 @@ export interface DNSCheck {
 	usable: string[];
 }
 
+/** The saved connection to AdGuard Home. The password can be set, and is never returned. */
+export interface AdGuardConnection {
+	/** False when nothing is saved; base_url is then the usual address of a local AdGuard Home. */
+	configured: boolean;
+	base_url: string;
+	/** Empty when AdGuard Home has no login. */
+	username: string;
+	has_password: boolean;
+}
+
+/** Saves or tests a connection; omitted fields stay as they are. */
+export interface AdGuardRequest {
+	base_url?: string;
+	username?: string;
+	/** Replaces the saved password; "" removes it. Needed when the address or username changes. */
+	password?: string;
+}
+
+/** What a test of the connection to AdGuard Home found. A connection that fails is ok: false. */
+export interface AdGuardTest {
+	ok: boolean;
+	error?: string;
+	/** AdGuard Home refused the account, and trying again won't help. */
+	refused: boolean;
+	version?: string;
+	running: boolean;
+	protection_enabled: boolean;
+	/** Null when AdGuard Home's query-log settings couldn't be read. */
+	query_log: { enabled: boolean; anonymize_client_ip: boolean } | null;
+	/** What asking the server's VPN addresses for DNS found, whatever AdGuard Home said. */
+	dns: DNSProbe[];
+	warnings: string[];
+}
+
 export interface Peer {
 	endpoint?: string;
 	last_handshake?: string;
@@ -213,7 +247,7 @@ export interface ClientSession {
 	send_bytes: number;
 }
 
-type Method = 'GET' | 'POST' | 'PATCH' | 'DELETE';
+type Method = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 
 /** Called when a request finds the session has ended, so the app can go to the login. */
 let unauthorized: (() => void) | undefined;
@@ -298,6 +332,13 @@ export const api = {
 	updateServer: (patch: SettingsPatch) => request<SettingsResult>('PATCH', '/api/server', patch),
 	status: () => request<ServerStatus>('GET', '/api/server/status'),
 	dnsCheck: () => request<DNSCheck>('GET', '/api/server/dns-check'),
+
+	adguard: () => request<AdGuardConnection>('GET', '/api/integrations/adguard'),
+	saveAdGuard: (r: AdGuardRequest) =>
+		request<AdGuardConnection>('PUT', '/api/integrations/adguard', r),
+	removeAdGuard: () => request<AdGuardConnection>('DELETE', '/api/integrations/adguard'),
+	testAdGuard: (r: AdGuardRequest) =>
+		request<AdGuardTest>('POST', '/api/integrations/adguard/test', r),
 
 	clients: () => request<Client[]>('GET', '/api/clients'),
 	client: (id: string) => request<Client>('GET', clientPath(id)),

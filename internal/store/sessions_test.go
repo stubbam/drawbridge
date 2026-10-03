@@ -87,19 +87,7 @@ func TestMigrationAddsClientSessionsToAnExistingDatabase(t *testing.T) {
 	if _, err := s.AddClient(ctx, "phone"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.db.ExecContext(ctx, `DROP TABLE client_sessions`); err != nil {
-		t.Fatal(err)
-	}
-	// A later migration (traffic) exists too now: rolling back version 4 alone would
-	// leave the tracked version at 5, so migrate() would skip re-running 4 entirely
-	// (version <= current) and client_sessions would never come back. It has to be
-	// dropped too, since re-running 5 would otherwise try to recreate an existing table.
-	if _, err := s.db.ExecContext(ctx, `DROP TABLE traffic`); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := s.db.ExecContext(ctx, `DELETE FROM schema_migrations WHERE version >= 4`); err != nil {
-		t.Fatal(err)
-	}
+	rollBackTo(t, s, 3)
 	_ = s.Close()
 
 	again, err := Open(ctx, path, testSealer(t, 1))

@@ -64,6 +64,8 @@ type Service struct {
 	sessionLive sessionTotals
 	// bus hands each recorded event to the streams that are watching.
 	bus eventBus
+	// adguardRefused is the last account AdGuard Home refused (adguard.go).
+	adguardRefused refusedLogin
 }
 
 func (s *Service) now() time.Time {

@@ -503,3 +503,68 @@ func ClientSessions(cs []store.ClientSession) []ClientSessionView {
 	}
 	return out
 }
+
+// AdGuardConnection is the saved connection to AdGuard Home (docs/PLAN.md §6.3). The password
+// isn't in it: it can be set, and never read back.
+type AdGuardConnection struct {
+	// Configured is whether a connection is saved. When it isn't, BaseURL is the usual address
+	// of a local AdGuard Home, to start from.
+	Configured  bool   `json:"configured"`
+	BaseURL     string `json:"base_url"`
+	Username    string `json:"username"`
+	HasPassword bool   `json:"has_password"`
+}
+
+// NewAdGuardConnection converts the service's connection.
+func NewAdGuardConnection(c service.AdGuardConnection) AdGuardConnection {
+	return AdGuardConnection(c)
+}
+
+// AdGuardRequest saves or tests a connection. Omitted fields stay as they are. A password
+// replaces the saved one, and "" removes it. Changing the address or the username takes a
+// password too, because the saved one is only sent to the address it was saved with.
+type AdGuardRequest struct {
+	BaseURL  *string `json:"base_url"`
+	Username *string `json:"username"`
+	Password *string `json:"password"`
+}
+
+// Service returns the request as the service takes it.
+func (r AdGuardRequest) Service() service.AdGuardPatch {
+	return service.AdGuardPatch{BaseURL: r.BaseURL, Username: r.Username, Password: r.Password}
+}
+
+// AdGuardQueryLog is how AdGuard Home's query log is set.
+type AdGuardQueryLog struct {
+	Enabled           bool `json:"enabled"`
+	AnonymizeClientIP bool `json:"anonymize_client_ip"`
+}
+
+// AdGuardTest is what a test of the connection found.
+type AdGuardTest struct {
+	OK                bool             `json:"ok"`
+	Error             string           `json:"error,omitempty"`
+	Refused           bool             `json:"refused"`
+	Version           string           `json:"version,omitempty"`
+	Running           bool             `json:"running"`
+	ProtectionEnabled bool             `json:"protection_enabled"`
+	QueryLog          *AdGuardQueryLog `json:"query_log"`
+	DNS               []DNSProbeResult `json:"dns"`
+	Warnings          []string         `json:"warnings"`
+}
+
+// NewAdGuardTest converts the service's result.
+func NewAdGuardTest(t service.AdGuardTest) AdGuardTest {
+	out := AdGuardTest{
+		OK: t.OK, Error: t.Error, Refused: t.Refused, Version: t.Version, Running: t.Running,
+		ProtectionEnabled: t.ProtectionEnabled, DNS: []DNSProbeResult{}, Warnings: []string{},
+	}
+	if t.QueryLog != nil {
+		out.QueryLog = &AdGuardQueryLog{Enabled: t.QueryLog.Enabled, AnonymizeClientIP: t.QueryLog.AnonymizeClientIP}
+	}
+	for _, p := range t.DNS {
+		out.DNS = append(out.DNS, DNSProbeResult{Address: p.Address, Answered: p.Answered, Detail: p.Detail})
+	}
+	out.Warnings = append(out.Warnings, t.Warnings...)
+	return out
+}

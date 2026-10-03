@@ -207,12 +207,7 @@ func TestMigrationAddsTrafficToAnExistingDatabase(t *testing.T) {
 	if _, err := s.AddClient(ctx, "phone"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.db.ExecContext(ctx, `DROP TABLE traffic`); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := s.db.ExecContext(ctx, `DELETE FROM schema_migrations WHERE version = 5`); err != nil {
-		t.Fatal(err)
-	}
+	rollBackTo(t, s, 4)
 	_ = s.Close()
 
 	again, err := Open(ctx, path, testSealer(t, 1))

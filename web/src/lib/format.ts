@@ -126,6 +126,16 @@ const eventTypes: { kind: string; category: DrawbridgeEvent['category']; label: 
 	{ kind: 'client.deleted', category: 'admin', label: 'Deleted a client' },
 	{ kind: 'client.config_viewed', category: 'admin', label: 'Viewed the config' },
 	{ kind: 'server.settings_changed', category: 'admin', label: 'Changed server settings' },
+	{
+		kind: 'integration.adguard_changed',
+		category: 'admin',
+		label: 'Changed the AdGuard Home connection'
+	},
+	{
+		kind: 'integration.adguard_removed',
+		category: 'admin',
+		label: 'Removed the AdGuard Home connection'
+	},
 	{ kind: 'auth.setup_completed', category: 'admin', label: 'Completed setup' },
 	{ kind: 'auth.setup_failed', category: 'admin', label: 'Failed setup (wrong token)' },
 	{ kind: 'auth.login', category: 'admin', label: 'Logged in' },

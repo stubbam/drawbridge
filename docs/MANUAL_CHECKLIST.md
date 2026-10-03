@@ -423,8 +423,9 @@ Settings).
 
 ## 10. AdGuard Home integration (M4; the API client so far)
 
-`internal/adguard` is the REST client the integration is built on (docs/PLAN.md §6.3). Name sync
-and the per-client DNS log aren't built yet, so these steps cover only what is. The client and
+`internal/adguard` is the REST client the integration is built on (docs/PLAN.md §6.3), and Settings
+saves and tests the connection to it. Name sync and the per-client DNS log aren't built yet, so
+these steps cover only what is. The client and
 its fake were checked on 2026-10-03 against AdGuard Home v0.107.79 in a container on a laptop,
 with real queries (CLAUDE.md, "Verified facts"). That isn't the reference platform's install, so
 nothing here is `[VERIFIED]` yet.
@@ -441,6 +442,21 @@ nothing here is `[VERIFIED]` yet.
   It adds, renames, and deletes clients named `drawbridge-contract-…` on documentation addresses
   (192.0.2.0/24 and 2001:db8::/32), and leaves nothing behind. It sends no wrong password, because
   AdGuard Home blocks an address for 15 minutes after five.
-- `[NEXT]` The daemon, in `drawbridge.service`'s sandbox, reaches AdGuard Home at
-  `http://127.0.0.1:3000/control` (the unit allows `AF_INET` and `AF_INET6` and filters no
-  addresses). It needs the sync, which is the first thing in the daemon that calls it.
+- `[UNVERIFIED]` Settings has an AdGuard Home section. With the usual address
+  (`http://127.0.0.1:3000/control`) and the account, Test connection says "Connected to AdGuard
+  Home" with its version, and the daemon, in `drawbridge.service`'s sandbox, reached it (the
+  unit allows `AF_INET` and `AF_INET6` and filters no addresses). The VPN addresses list says
+  which of them answer DNS, matching the *Check this server* button above it.
+- `[UNVERIFIED]` A wrong password gives "refused the account", and clicking Test again right away
+  says it won't ask again for 30 seconds. AdGuard Home's own log shows one refused login, not
+  two.
+- `[UNVERIFIED]` After Save, reloading the page shows the address and the username, an empty
+  password field that says "Saved", and no password anywhere in the page, in
+  `GET /api/integrations/adguard`, or in `journalctl -u drawbridge`. Changing the address without
+  typing the password is refused. The log lists "Changed the AdGuard Home connection", and
+  *password: set*, not the password.
+- `[UNVERIFIED]` AdGuard Home's query-log warnings: with its log off, and with *Anonymize client
+  IPs* on, Test says so.
+- `[UNVERIFIED]` Remove forgets the connection: after it, the form shows the usual address and no
+  username, and `sqlite3 /var/lib/drawbridge/drawbridge.db 'select count(*) from dns_integration'`
+  (as the `drawbridge` user) says 0.

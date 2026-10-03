@@ -120,6 +120,13 @@ func (s *Server) Unblock() {
 	s.mu.Unlock()
 }
 
+// FailedLogins is how many logins have been refused since the last Unblock.
+func (s *Server) FailedLogins() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.failed
+}
+
 // Blocked reports whether failed logins have blocked the caller.
 func (s *Server) Blocked() bool {
 	s.mu.Lock()

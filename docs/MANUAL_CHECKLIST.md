@@ -420,3 +420,27 @@ Settings).
   hadn't been written yet.
 - `[UNVERIFIED]` Renaming a connected client from its page (Rename opens a dialog) changes only
   the name: the peer stays connected, and its config and keys are unchanged.
+
+## 10. AdGuard Home integration (M4; the API client so far)
+
+`internal/adguard` is the REST client the integration is built on (docs/PLAN.md §6.3). Name sync
+and the per-client DNS log aren't built yet, so these steps cover only what is. The client and
+its fake were checked on 2026-10-03 against AdGuard Home v0.107.79 in a container on a laptop,
+with real queries (CLAUDE.md, "Verified facts"). That isn't the reference platform's install, so
+nothing here is `[VERIFIED]` yet.
+
+- `[UNVERIFIED]` The client's contract test passes against the reference platform's AdGuard Home.
+  Make an account for it in AdGuard Home first (Settings, then the admin account, or a second
+  user in `AdGuardHome.yaml`), and note the version in the result:
+
+  ```bash
+  DRAWBRIDGE_ADGUARD_URL=http://127.0.0.1:3000/control DRAWBRIDGE_ADGUARD_USER=drawbridge \
+  DRAWBRIDGE_ADGUARD_PASSWORD=... go test -count=1 -v -run Contract ./internal/adguard
+  ```
+
+  It adds, renames, and deletes clients named `drawbridge-contract-…` on documentation addresses
+  (192.0.2.0/24 and 2001:db8::/32), and leaves nothing behind. It sends no wrong password, because
+  AdGuard Home blocks an address for 15 minutes after five.
+- `[NEXT]` The daemon, in `drawbridge.service`'s sandbox, reaches AdGuard Home at
+  `http://127.0.0.1:3000/control` (the unit allows `AF_INET` and `AF_INET6` and filters no
+  addresses). It needs the sync, which is the first thing in the daemon that calls it.

@@ -4,6 +4,7 @@
 	import { api, type Client } from '$lib/api';
 	import { errorMessage } from '$lib/errors';
 	import { clientState, formatAgo, formatBytes, stateLabels, type ClientState } from '$lib/format';
+	import { live, useLive } from '$lib/live.svelte';
 	import { poll } from '$lib/poll';
 	import { sortClients, storedSort, storeSort, type SortKey } from '$lib/sort';
 	import Result from '$lib/components/Result.svelte';
@@ -34,7 +35,18 @@
 			error = errorMessage(err);
 		}
 	}
-	$effect(() => poll(load, 5000));
+	// The live feed pushes the clients as the daemon polls the peers, so while it's open this
+	// page doesn't ask for them; when it can't be had, the page polls as it always did.
+	$effect(() => useLive());
+	$effect(() => {
+		if (!live.open) return poll(load, 5000);
+	});
+	$effect(() => {
+		const s = live.status;
+		if (!live.open || !s) return;
+		clients = s.clients;
+		now = Date.now();
+	});
 
 	const sortOptions: SortKey[] = ['name', 'status', 'handshake', 'ip'];
 	let sort = $state(storedSort('clients', sortOptions, 'name'));

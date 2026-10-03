@@ -40,8 +40,10 @@ setups.** What exists:
   event, client, and time, and exports the matching events as CSV. Under systemd every event is
   also a journal entry whose parts are fields (`DRAWBRIDGE_EVENT`, `DRAWBRIDGE_CLIENT`, and so
   on; `internal/journal`). A write-budget test keeps the database
-  within what an SD card can take. Also ahead of the rest of M4 (the SSE stream and AdGuard Home
-  sync aren't built yet).
+  within what an SD card can take. The dashboard, client pages, and log get their status and
+  new events from a Server-Sent Events stream (`GET /api/stream`, `internal/api/stream.go`,
+  `web/src/lib/live.svelte.ts`), and poll only when it can't be had. Also ahead of the rest of M4
+  (AdGuard Home sync isn't built yet).
 - The CLI, which talks to the daemon over the control socket: `server show|set`,
   `client list|add|show|pause|resume|rename|delete|config|qr`, `events`, `doctor`, and
   `admin setup-token|create|reset-password`.
@@ -286,6 +288,9 @@ These are the rules most likely to get silently broken.
   might run on a real host. The planned AdGuard Home integration (M4) reaches its API at
   `http://127.0.0.1:3000/control` by default; that address is a setting (`adguard.base_url`,
   §7), not hard-coded.
+- **The HTTP server has no write timeout**, because one would cut the event stream (ADR 0009). A
+  handler that stays open sets a deadline on each write (`http.ResponseController`) and ends when
+  `Options.Shutdown` closes, or the daemon's graceful shutdown would wait on it.
 - **Protect the SD card.** Monitoring samples, and the bytes of open sessions, are buffered in
   memory and flushed once per raw interval (a minute by default) in one transaction. Nothing
   writes to the DB on every poll (§6.4). `TestWriteBudget` simulates a day against a real
@@ -461,6 +466,8 @@ the router allows inbound UDP 51820 to the host's stable address (with a real cl
     `/`, plus hooks for the routing table, the resolver, `statfs`, and nft), so a check is
     tested by handing it a `fstest.MapFS`. A check that can't read what it needs is a skip,
     never a fail. `service.Diagnose` feeds it the database's and the tunnel's state.
+  - The event bus is in `service/eventbus.go`: `record` publishes each event it stores, and the
+    stream subscribes. It never waits for a subscriber.
   - `journal/` logs to journald's native protocol, so a log record's attributes become fields
     (`DRAWBRIDGE_<KEY>`). `service.record` logs every event through it.
   - `auth/` has password hashing, tokens, and the login rate limiter; `lan/` detects the LAN

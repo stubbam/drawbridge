@@ -4,6 +4,7 @@
 	import { saveText } from '$lib/download';
 	import { errorMessage } from '$lib/errors';
 	import { eventActor, eventDetails, eventKinds, eventLabel, formatTime } from '$lib/format';
+	import { live, onLiveEvent, useLive } from '$lib/live.svelte';
 
 	const pageSize = 50;
 	/** How far back each choice of "When" reaches, in hours. */
@@ -83,8 +84,22 @@
 			// The client filter just has nobody to pick; the log itself shows any real problem.
 		});
 
-	// Reload from the newest whenever a filter changes.
+	// New events arrive as they're recorded, at the top, when they're ones the filters show. One
+	// that's already listed (a reload can have it too) isn't added again.
+	$effect(() => useLive());
+	$effect(() =>
+		onLiveEvent((e) => {
+			if (category && e.category !== category) return;
+			if (kind && e.kind !== kind) return;
+			if (clientID && e.client_id !== clientID) return;
+			events = [e, ...events.filter((x) => x.id !== e.id)];
+		})
+	);
+
+	// Reload from the newest whenever a filter changes, and after the feed has been away, since
+	// the events it missed aren't in the list.
 	$effect(() => {
+		void live.reconnects;
 		const hours = windows.find((w) => w.value === when)?.hours ?? 0;
 		from = hours ? new Date(Date.now() - hours * 3_600_000).toISOString() : '';
 		void fetchPage();

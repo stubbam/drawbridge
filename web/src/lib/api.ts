@@ -64,6 +64,12 @@ export interface ServerStatus {
 	online: number;
 }
 
+/** A `status` message of the stream: what the server's status and the client list return, together. */
+export interface StreamStatus {
+	server: ServerStatus;
+	clients: Client[];
+}
+
 /** What asking one of the server's VPN addresses for DNS found. */
 export interface DNSProbe {
 	address: string;

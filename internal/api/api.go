@@ -33,6 +33,9 @@ type Options struct {
 	// Allowed returns the sources that may connect (lan.Allowlist). Nil allows every
 	// source; only tests leave it nil.
 	Allowed func(context.Context) []netip.Prefix
+	// Shutdown is closed when the daemon is stopping, so that the open streams end and the
+	// server's graceful shutdown doesn't wait on them. Nil never closes.
+	Shutdown <-chan struct{}
 }
 
 // route is one API endpoint. The table is the single list of routes, which the
@@ -72,6 +75,7 @@ var routes = []route{
 	{"GET", "/api/traffic", false, (*handler).totalTraffic},
 	{"GET", "/api/traffic/clients", false, (*handler).clientsTraffic},
 	{"GET", "/api/events", false, (*handler).events},
+	{"GET", "/api/stream", false, (*handler).stream},
 }
 
 // New returns the handler for the whole HTTP interface.
@@ -79,7 +83,7 @@ func New(opts Options) http.Handler {
 	if opts.Log == nil {
 		opts.Log = slog.New(slog.DiscardHandler)
 	}
-	h := &handler{svc: opts.Service, log: opts.Log}
+	h := &handler{svc: opts.Service, log: opts.Log, shutdown: opts.Shutdown}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", healthz)
 	if opts.Service != nil {

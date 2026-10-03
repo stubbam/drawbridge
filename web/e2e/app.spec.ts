@@ -322,6 +322,9 @@ test("the dashboard shows a connected client's endpoint under its name", async (
 		}
 	};
 	await page.route('**/api/clients', (route) => route.fulfill({ json: [phone] }));
+	// The page takes its clients from the live feed when it has one. This test is about how a row
+	// looks, so the feed is refused and the page asks for them, which the line above answers.
+	await page.route('**/api/stream', (route) => route.abort());
 	await login(page);
 
 	// The endpoint's address (without the port) is under the name, and the total is on that

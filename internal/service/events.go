@@ -86,9 +86,14 @@ func (s *Service) record(ctx context.Context, e Event) {
 	// The journal gets the event first, so it has it even when the database can't take it.
 	s.logEvent(ctx, se)
 	// The event outlives the request that caused it.
-	if err := s.Store.AddEvent(context.WithoutCancel(ctx), se); err != nil {
+	id, err := s.Store.AddEvent(context.WithoutCancel(ctx), se)
+	if err != nil {
 		s.Log.Warn("can't record an event", "kind", e.Kind, "err", err)
+		return
 	}
+	// Whoever is watching (the web UI's stream) hears it, with the ID it has in the log.
+	se.ID = id
+	s.bus.publish(se)
 }
 
 // logEvent writes an event to the log, for the journal (`journalctl -u drawbridge`). Its

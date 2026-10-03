@@ -62,6 +62,8 @@ type Service struct {
 	live liveTraffic
 	// sessionLive holds open sessions' latest bytes between the flushes that save them.
 	sessionLive sessionTotals
+	// bus hands each recorded event to the streams that are watching.
+	bus eventBus
 }
 
 func (s *Service) now() time.Time {
@@ -214,19 +216,26 @@ type Status struct {
 
 // Status returns the tunnel's state and client counts.
 func (s *Service) Status(ctx context.Context) (Status, error) {
+	st, _, err := s.Snapshot(ctx)
+	return st, err
+}
+
+// Snapshot returns the tunnel's state and client counts, and every client's status, from one
+// read: what the web UI's stream pushes every poll.
+func (s *Service) Snapshot(ctx context.Context) (Status, []ClientStatus, error) {
 	st, err := s.Store.Settings(ctx)
 	if err != nil {
-		return Status{}, err
+		return Status{}, nil, err
 	}
 	var out Status
 	if _, err := s.WG.Device(st.Interface); err == nil {
 		out.TunnelUp = true
 	} else if !errors.Is(err, wg.ErrNoDevice) {
-		return Status{}, err
+		return Status{}, nil, err
 	}
 	clients, err := s.Clients(ctx)
 	if err != nil {
-		return Status{}, err
+		return Status{}, nil, err
 	}
 	now := s.now()
 	for _, c := range clients {
@@ -238,7 +247,7 @@ func (s *Service) Status(ctx context.Context) (Status, error) {
 			out.Online++
 		}
 	}
-	return out, nil
+	return out, clients, nil
 }
 
 // ClientStatus is a client and its live peer status.

@@ -1132,6 +1132,43 @@
           }
         ]
       }
+    },
+    "/api/stream": {
+      "get": {
+        "summary": "Live updates, as Server-Sent Events",
+        "description": "Stays open until the client closes it, the session ends, or the daemon stops. The browser's EventSource reconnects by itself after a lost connection, and the stream starts again with a status. There are two messages. `status` comes as the stream opens and then every poll of the peers (5 seconds by default), and a moment after each event: its data is a StreamStatus, which is what GET /api/server/status and GET /api/clients return together. `event` comes as an event is recorded: its data is an Event, as GET /api/events returns it, and the message's `id` is the event's ID. Each status checks the session, which counts as use, so a stream that stays open keeps its session from idling out; a stream whose session has ended is closed, and the reconnect gets a 401. At most 16 streams are open at once.",
+        "responses": {
+          "401": {
+            "$ref": "#/components/responses/NotLoggedIn"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "503": {
+            "description": "Too many streams are open.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "The stream.",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "events"
+        ]
+      }
     }
   },
   "components": {
@@ -1757,6 +1794,25 @@
             }
           }
         }
+      },
+      "StreamStatus": {
+        "type": "object",
+        "required": [
+          "server",
+          "clients"
+        ],
+        "properties": {
+          "server": {
+            "$ref": "#/components/schemas/ServerStatus"
+          },
+          "clients": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Client"
+            }
+          }
+        },
+        "description": "The data of a status message of the stream."
       },
       "TrafficSample": {
         "type": "object",

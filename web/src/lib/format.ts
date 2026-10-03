@@ -114,32 +114,42 @@ export function formatTime(iso: string, now: Date = new Date()): string {
 	return `${formatDay(d, d.getFullYear() !== now.getFullYear())} ${formatClock(d, true)}`;
 }
 
-const eventLabels: Record<string, string> = {
-	'client.added': 'Added a client',
-	'client.renamed': 'Renamed a client',
-	'client.paused': 'Paused a client',
-	'client.resumed': 'Resumed a client',
-	'client.deleted': 'Deleted a client',
-	'client.config_viewed': 'Viewed the config',
-	'server.settings_changed': 'Changed server settings',
-	'auth.setup_completed': 'Completed setup',
-	'auth.setup_failed': 'Failed setup (wrong token)',
-	'auth.login': 'Logged in',
-	'auth.login_failed': 'Failed login',
-	'auth.logout': 'Logged out',
-	'auth.password_changed': 'Changed the password',
-	'auth.password_reset': 'Reset the password (CLI)',
-	'auth.admin_created': 'Created the admin account (CLI)',
-	'auth.session_revoked': 'Revoked a session',
-	'tunnel.drift_corrected': 'Corrected drift',
-	'client.connected': 'Connected',
-	'client.disconnected': 'Disconnected',
-	'client.roamed': 'Roamed'
-};
+/** Every kind of event the daemon records, with its category and what the log calls it. */
+const eventTypes: { kind: string; category: DrawbridgeEvent['category']; label: string }[] = [
+	{ kind: 'client.connected', category: 'connection', label: 'Connected' },
+	{ kind: 'client.disconnected', category: 'connection', label: 'Disconnected' },
+	{ kind: 'client.roamed', category: 'connection', label: 'Roamed' },
+	{ kind: 'client.added', category: 'admin', label: 'Added a client' },
+	{ kind: 'client.renamed', category: 'admin', label: 'Renamed a client' },
+	{ kind: 'client.paused', category: 'admin', label: 'Paused a client' },
+	{ kind: 'client.resumed', category: 'admin', label: 'Resumed a client' },
+	{ kind: 'client.deleted', category: 'admin', label: 'Deleted a client' },
+	{ kind: 'client.config_viewed', category: 'admin', label: 'Viewed the config' },
+	{ kind: 'server.settings_changed', category: 'admin', label: 'Changed server settings' },
+	{ kind: 'auth.setup_completed', category: 'admin', label: 'Completed setup' },
+	{ kind: 'auth.setup_failed', category: 'admin', label: 'Failed setup (wrong token)' },
+	{ kind: 'auth.login', category: 'admin', label: 'Logged in' },
+	{ kind: 'auth.login_failed', category: 'admin', label: 'Failed login' },
+	{ kind: 'auth.logout', category: 'admin', label: 'Logged out' },
+	{ kind: 'auth.password_changed', category: 'admin', label: 'Changed the password' },
+	{ kind: 'auth.password_reset', category: 'admin', label: 'Reset the password (CLI)' },
+	{ kind: 'auth.admin_created', category: 'admin', label: 'Created the admin account (CLI)' },
+	{ kind: 'auth.session_revoked', category: 'admin', label: 'Revoked a session' },
+	{ kind: 'tunnel.drift_corrected', category: 'system', label: 'Corrected drift' }
+];
+
+const eventLabels = new Map(eventTypes.map((t) => [t.kind, t.label]));
 
 /** Describes an event's kind for people; unknown kinds show as they are. */
 export function eventLabel(kind: string): string {
-	return eventLabels[kind] ?? kind;
+	return eventLabels.get(kind) ?? kind;
+}
+
+/** The kinds of event in a category (or in every category), for the log's filter. */
+export function eventKinds(
+	category?: DrawbridgeEvent['category'] | ''
+): { kind: string; label: string }[] {
+	return eventTypes.filter((t) => !category || t.category === category);
 }
 
 /** Describes who caused an event: "admin (web, 192.168.4.20)", "root (CLI)", "Drawbridge". */

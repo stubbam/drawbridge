@@ -69,6 +69,21 @@ describe('api', () => {
 		]);
 	});
 
+	it('asks for kinds and times, and for the whole log as CSV', async () => {
+		const fetchFn = vi.fn(async () => respond(200, '', { 'Content-Type': 'text/csv' }));
+		setFetch(fetchFn);
+		const from = '2026-09-30T12:00:00.000Z';
+		await api.events({ kind: 'client.connected', from, limit: 50 });
+		// A CSV is the whole log, so a page's limit and cursor are left out.
+		await api.eventsCsv({ kind: 'client.connected', from, limit: 50, before: 9 });
+		await api.eventsCsv();
+		expect(fetchFn.mock.calls.map((c) => (c as unknown[])[0])).toEqual([
+			'/api/events?kind=client.connected&from=2026-09-30T12%3A00%3A00.000Z&limit=50',
+			'/api/events?kind=client.connected&from=2026-09-30T12%3A00%3A00.000Z&format=csv',
+			'/api/events?format=csv'
+		]);
+	});
+
 	it('builds the traffic and session-history requests', async () => {
 		const fetchFn = vi.fn(async () => respond(200, []));
 		setFetch(fetchFn);

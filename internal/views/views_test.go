@@ -80,11 +80,53 @@ func TestParseEventFilter(t *testing.T) {
 	if f, err := ParseEventFilter(url.Values{"category": {"connection"}}); err != nil || f.Category != "connection" {
 		t.Fatalf("category=connection: %+v, %v", f, err)
 	}
-	for _, q := range []string{"before=0", "before=x", "limit=0", "limit=501", "category=bogus"} {
+	from, to := time.Date(2026, 9, 30, 0, 0, 0, 0, time.UTC), time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
+	q := url.Values{"kind": {"client.connected"}, "from": {"2026-09-30T00:00:00Z"}, "to": {"2026-09-30T20:00:00-04:00"}}
+	if f, err := ParseEventFilter(q); err != nil || f.Kind != "client.connected" || !f.From.Equal(from) || !f.To.Equal(to) {
+		t.Fatalf("kind, from, to: %+v, %v", f, err)
+	}
+	for _, q := range []string{"before=0", "before=x", "limit=0", "limit=501", "category=bogus",
+		"kind=Client.Added", "kind=a%20b", "kind=" + strings.Repeat("a", 65),
+		"from=yesterday", "from=2026-09-30", "to=1700000000",
+		"from=2026-10-01T00:00:00Z&to=2026-09-30T00:00:00Z", "from=2026-10-01T00:00:00Z&to=2026-10-01T00:00:00Z"} {
 		v, _ := url.ParseQuery(q)
 		if _, err := ParseEventFilter(v); !model.IsInvalid(err) {
 			t.Errorf("%s: err %v, want an InvalidError", q, err)
 		}
+	}
+}
+
+func TestEventCSVRow(t *testing.T) {
+	e := store.Event{
+		Time: time.Date(2026, 9, 30, 20, 15, 4, 0, time.FixedZone("EDT", -4*3600)), Kind: "client.renamed",
+		Category: "admin", Actor: "admin", Via: "web", SourceIP: "192.0.2.7", ClientID: "c1",
+		ClientName: "phone", Data: map[string]string{"to": "tablet", "from": "phone"},
+	}
+	got := strings.Join(EventCSVRow(e), "|")
+	want := `2026-10-01T00:15:04Z|client.renamed|admin|admin|web|192.0.2.7|c1|phone|{"from":"phone","to":"tablet"}`
+	if got != want {
+		t.Fatalf("row\n got %s\nwant %s", got, want)
+	}
+	if n := len(EventCSVRow(store.Event{})); n != len(EventsCSVHeader) {
+		t.Fatalf("a row has %d cells, the header %d", n, len(EventsCSVHeader))
+	}
+	if row := EventCSVRow(store.Event{Kind: "client.added"}); row[8] != "" || row[5] != "" {
+		t.Fatalf("an event with no data or address has details %q and address %q, want both empty", row[8], row[5])
+	}
+}
+
+func TestEventCSVRowDefusesFormulas(t *testing.T) {
+	for _, name := range []string{`=HYPERLINK("http://example.com","x")`, "+1", "-2", "@SUM(A1)", "\tx", "\rx"} {
+		row := EventCSVRow(store.Event{Kind: "auth.login_failed", Actor: name, ClientName: name})
+		for _, i := range []int{3, 7} {
+			if row[i] != "'"+name {
+				t.Errorf("cell %d for %q is %q, want it to start with an apostrophe", i, name, row[i])
+			}
+		}
+	}
+	// Ordinary text, including a name with a dash inside it, is left alone.
+	if row := EventCSVRow(store.Event{Actor: "admin", ClientName: "my-phone"}); row[3] != "admin" || row[7] != "my-phone" {
+		t.Errorf("plain cells changed: %q", row)
 	}
 }
 

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/csv"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -345,10 +346,59 @@ func (h *handler) events(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	f.ClientID = r.URL.Query().Get("client")
+	switch format := r.URL.Query().Get("format"); format {
+	case "csv":
+		h.eventsCSV(w, r, f)
+		return
+	case "", "json":
+	default:
+		h.fail(w, &model.InvalidError{Err: fmt.Errorf("format must be json or csv, not %q", format)})
+		return
+	}
 	events, err := h.svc.Events(r.Context(), f)
 	if err != nil {
 		h.fail(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, views.Events(events))
+}
+
+// eventsCSV streams every event that matches f as a CSV file, newest first.
+func (h *handler) eventsCSV(w http.ResponseWriter, r *http.Request, f store.EventFilter) {
+	var out *csv.Writer
+	// The headers go out with the first rows, so that a failure before them is still an
+	// error response.
+	begin := func() {
+		if out != nil {
+			return
+		}
+		w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+		w.Header().Set("Content-Disposition", `attachment; filename="drawbridge-events.csv"`)
+		w.Header().Set("Cache-Control", "no-store")
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		out = csv.NewWriter(w)
+		_ = out.Write(views.EventsCSVHeader)
+	}
+	err := h.svc.EachEvent(r.Context(), f, func(page []store.Event) error {
+		begin()
+		for _, e := range page {
+			if err := out.Write(views.EventCSVRow(e)); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil && out == nil {
+		h.fail(w, err)
+		return
+	}
+	begin()
+	out.Flush()
+	if err == nil {
+		err = out.Error()
+	}
+	if err != nil {
+		// The status is sent, so all that's left is to say so; the file ends short.
+		h.log.Warn("event export failed partway", "err", err)
+	}
 }

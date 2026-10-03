@@ -1,35 +1,92 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
-	import { api, type DrawbridgeEvent, type EventFilter } from '$lib/api';
+	import { api, type Client, type DrawbridgeEvent, type EventFilter } from '$lib/api';
+	import { saveText } from '$lib/download';
 	import { errorMessage } from '$lib/errors';
-	import { eventActor, eventDetails, eventLabel, formatTime } from '$lib/format';
+	import { eventActor, eventDetails, eventKinds, eventLabel, formatTime } from '$lib/format';
 
 	const pageSize = 50;
+	/** How far back each choice of "When" reaches, in hours. */
+	const windows = [
+		{ value: '', label: 'Any Time', hours: 0 },
+		{ value: '1h', label: 'Last Hour', hours: 1 },
+		{ value: '24h', label: 'Last 24 Hours', hours: 24 },
+		{ value: '7d', label: 'Last 7 Days', hours: 7 * 24 },
+		{ value: '30d', label: 'Last 30 Days', hours: 30 * 24 }
+	];
+
 	let category = $state<'' | 'admin' | 'system' | 'connection'>('');
+	let kind = $state('');
+	let clientID = $state('');
+	let when = $state('');
+	let clients = $state<Client[]>([]);
 	let events = $state<DrawbridgeEvent[]>([]);
 	let more = $state(false);
 	let error = $state('');
 	let loading = $state(false);
+	let exporting = $state(false);
+	/** The start of "When", fixed when the list loads so that its pages agree. */
+	let from = '';
+
+	const kinds = $derived(eventKinds(category));
+
+	function filter(): EventFilter {
+		const f: EventFilter = {};
+		if (category) f.category = category;
+		if (kind) f.kind = kind;
+		if (clientID) f.client = clientID;
+		if (from) f.from = from;
+		return f;
+	}
+
+	/** Counts requests, so that a slow answer to an old filter can't replace a newer one's. */
+	let latest = 0;
 
 	async function fetchPage(before?: number) {
+		const mine = ++latest;
 		loading = true;
 		error = '';
 		try {
-			const filter: EventFilter = { limit: pageSize, before };
-			if (category) filter.category = category;
-			const page = await api.events(filter);
+			const page = await api.events({ ...filter(), limit: pageSize, before });
+			if (mine !== latest) return;
 			events = before ? [...events, ...page] : page;
 			more = page.length === pageSize;
 		} catch (err) {
-			error = errorMessage(err);
+			if (mine === latest) error = errorMessage(err);
 		} finally {
-			loading = false;
+			if (mine === latest) loading = false;
 		}
 	}
 
-	// Reload from the newest whenever the filter changes.
+	/** Choosing a category drops an event kind that belongs to another one. */
+	function pickCategory(value: string) {
+		category = value as typeof category;
+		if (kind && !eventKinds(category).some((k) => k.kind === kind)) kind = '';
+	}
+
+	async function exportCsv() {
+		exporting = true;
+		error = '';
+		try {
+			saveText('drawbridge-events.csv', await api.eventsCsv(filter()), 'text/csv');
+		} catch (err) {
+			error = errorMessage(err);
+		} finally {
+			exporting = false;
+		}
+	}
+
+	api
+		.clients()
+		.then((list) => (clients = list))
+		.catch(() => {
+			// The client filter just has nobody to pick; the log itself shows any real problem.
+		});
+
+	// Reload from the newest whenever a filter changes.
 	$effect(() => {
-		void category;
+		const hours = windows.find((w) => w.value === when)?.hours ?? 0;
+		from = hours ? new Date(Date.now() - hours * 3_600_000).toISOString() : '';
 		void fetchPage();
 	});
 </script>
@@ -38,13 +95,50 @@
 
 <div class="flex flex-wrap items-center justify-between gap-3">
 	<h1 class="text-2xl font-semibold tracking-tight">Logs</h1>
-	<div class="flex items-center gap-2">
-		<label class="text-sm" for="category">Show</label>
-		<select class="input w-auto" id="category" bind:value={category}>
+	<button type="button" class="btn" disabled={exporting} onclick={exportCsv}>
+		{exporting ? 'Exporting…' : 'Export CSV'}
+	</button>
+</div>
+
+<div class="flex flex-wrap items-end gap-3">
+	<div>
+		<label class="label" for="category">Show</label>
+		<select
+			class="input w-auto"
+			id="category"
+			value={category}
+			onchange={(e) => pickCategory(e.currentTarget.value)}
+		>
 			<option value="">Everything</option>
 			<option value="admin">Changes and logins</option>
 			<option value="connection">Client connections</option>
 			<option value="system">Drawbridge itself</option>
+		</select>
+	</div>
+	<div>
+		<label class="label" for="kind">Event</label>
+		<select class="input w-auto" id="kind" bind:value={kind}>
+			<option value="">Any</option>
+			{#each kinds as k (k.kind)}
+				<option value={k.kind}>{k.label}</option>
+			{/each}
+		</select>
+	</div>
+	<div>
+		<label class="label" for="client">Client</label>
+		<select class="input w-auto" id="client" bind:value={clientID}>
+			<option value="">Any</option>
+			{#each clients as c (c.id)}
+				<option value={c.id}>{c.name}</option>
+			{/each}
+		</select>
+	</div>
+	<div>
+		<label class="label" for="when">When</label>
+		<select class="input w-auto" id="when" bind:value={when}>
+			{#each windows as w (w.value)}
+				<option value={w.value}>{w.label}</option>
+			{/each}
 		</select>
 	</div>
 </div>

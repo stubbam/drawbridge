@@ -89,3 +89,27 @@ func (s *Service) record(ctx context.Context, e Event) {
 func (s *Service) Events(ctx context.Context, f store.EventFilter) ([]store.Event, error) {
 	return s.Store.Events(ctx, f)
 }
+
+// eventPage is how many events EachEvent reads at a time.
+const eventPage = 1000
+
+// EachEvent calls fn with every event that matches f, newest first, one page at a time, so
+// an export doesn't hold the whole log in memory. f's Limit doesn't apply.
+func (s *Service) EachEvent(ctx context.Context, f store.EventFilter, fn func([]store.Event) error) error {
+	f.Limit = eventPage
+	for {
+		page, err := s.Store.Events(ctx, f)
+		if err != nil {
+			return err
+		}
+		if len(page) > 0 {
+			if err := fn(page); err != nil {
+				return err
+			}
+		}
+		if len(page) < eventPage {
+			return nil
+		}
+		f.Before = page[len(page)-1].ID
+	}
+}

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -44,8 +45,9 @@ func ErrorStatus(err error) int {
 const MaxEvents = 500
 
 // ParseEventFilter reads the event log's query parameters: before (an event ID, for
-// paging), category, and limit. Callers resolve the client parameter themselves, by ID
-// or by name.
+// paging), category, kind (one event kind, like client.connected), from and to (RFC 3339 times,
+// from inclusive and to exclusive), and limit. Callers resolve the client parameter themselves,
+// by ID or by name.
 func ParseEventFilter(q url.Values) (store.EventFilter, error) {
 	var f store.EventFilter
 	if v := q.Get("before"); v != "" {
@@ -69,8 +71,33 @@ func ParseEventFilter(q url.Values) (store.EventFilter, error) {
 		return f, &model.InvalidError{Err: fmt.Errorf("category must be %s, %s, or %s, not %q",
 			service.CategoryAdmin, service.CategorySystem, service.CategoryConnection, c)}
 	}
+	if v := q.Get("kind"); v != "" {
+		if !eventKind.MatchString(v) {
+			return f, &model.InvalidError{Err: fmt.Errorf("kind must be an event kind like client.connected, not %q", v)}
+		}
+		f.Kind = v
+	}
+	for _, p := range []struct {
+		name string
+		dst  *time.Time
+	}{{"from", &f.From}, {"to", &f.To}} {
+		if v := q.Get(p.name); v != "" {
+			t, err := time.Parse(time.RFC3339, v)
+			if err != nil {
+				return f, &model.InvalidError{Err: fmt.Errorf("%s must be a time like 2026-09-30T00:00:00Z, not %q", p.name, v)}
+			}
+			*p.dst = t
+		}
+	}
+	if !f.From.IsZero() && !f.To.IsZero() && !f.From.Before(f.To) {
+		return f, &model.InvalidError{Err: errors.New("from must be before to")}
+	}
 	return f, nil
 }
+
+// eventKind matches what the service records as an event's kind: lowercase words joined by
+// dots and underscores.
+var eventKind = regexp.MustCompile(`^[a-z][a-z0-9_.]{0,63}$`)
 
 // trafficRanges are the chart ranges the API accepts, shortest first. Each reads the store at
 // the finest resolution that still gives the chart a useful number of points: the last minute

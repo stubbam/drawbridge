@@ -36,8 +36,9 @@ setups.** What exists:
   the stored buckets are a minute wide. A Charts page (the chart-line icon in the header, from
   `GET /api/traffic/clients`) draws Received, Sent, and cumulative charts with a line per
   client, and the dashboard and a client's page chart the total or the client's own. One range
-  choice covers every chart (`web/src/lib/range.svelte.ts`). Also ahead of the rest of M4 (the log
-  viewer's CSV export, structured journald fields, and AdGuard Home sync aren't built yet).
+  choice covers every chart (`web/src/lib/range.svelte.ts`). The log viewer filters by category,
+  event, client, and time, and exports the matching events as CSV. Also ahead of the rest of M4
+  (structured journald fields, the SSE stream, and AdGuard Home sync aren't built yet).
 - The CLI, which talks to the daemon over the control socket: `server show|set`,
   `client list|add|show|pause|resume|rename|delete|config|qr`, `events`, `doctor`, and
   `admin setup-token|create|reset-password`.

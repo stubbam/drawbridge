@@ -3,6 +3,7 @@
 package views
 
 import (
+	"encoding/json"
 	"net/netip"
 	"strings"
 	"time"
@@ -278,6 +279,34 @@ func Events(es []store.Event) []EventView {
 		}
 	}
 	return out
+}
+
+// EventsCSVHeader is the first row of the event log's CSV export.
+var EventsCSVHeader = []string{"time", "event", "category", "actor", "via", "source_ip", "client_id",
+	"client_name", "details"}
+
+// EventCSVRow is an event as a row of the CSV export, in the order of EventsCSVHeader. The
+// time is RFC 3339 in UTC, and the details are the event's data as a JSON object (empty when
+// there is none).
+//
+// A spreadsheet runs a cell that starts with =, +, -, or @ as a formula, and some of these
+// cells are chosen by strangers: a failed login's actor is whatever name was typed. So such
+// a cell starts with an apostrophe, which a spreadsheet reads as "this is text".
+func EventCSVRow(e store.Event) []string {
+	var details string
+	if len(e.Data) > 0 {
+		// Marshaling a map of strings can't fail, and sorts its keys.
+		b, _ := json.Marshal(e.Data)
+		details = string(b)
+	}
+	row := []string{e.Time.UTC().Format(time.RFC3339), e.Kind, e.Category, e.Actor, e.Via, e.SourceIP,
+		e.ClientID, e.ClientName, details}
+	for i, cell := range row {
+		if cell != "" && strings.IndexByte("=+-@\t\r", cell[0]) >= 0 {
+			row[i] = "'" + cell
+		}
+	}
+	return row
 }
 
 // SetupStatus says whether first-run setup is needed.

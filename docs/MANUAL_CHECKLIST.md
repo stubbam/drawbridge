@@ -303,6 +303,13 @@ only sign a session actually ended.
 - `[UNVERIFIED]` The Logs page's "Client connections" filter, clicked through a real browser,
   shows the same connect/disconnect/roam events `drawbridge events` does. (Needs a real
   logged-in browser session; see §5.)
+- `[UNVERIFIED]` Under the installed units' sandbox (`ProtectSystem=strict`, only `CAP_NET_ADMIN`),
+  the daemon's events reach the journal as fields: `sudo journalctl -u drawbridge
+  DRAWBRIDGE_CLIENT=<a client's name>` lists that client's events (added, paused, connected,
+  disconnected), `-o json` shows `DRAWBRIDGE_EVENT`, `DRAWBRIDGE_CATEGORY`, `DRAWBRIDGE_VIA`, and
+  `PRIORITY`, and a wrong password at the login shows under `journalctl -u drawbridge -p warning`.
+  Real journald accepts the entries (the integration tests check that against the runner's
+  journald, with a fake backend), but the unit's sandbox hasn't been run against it.
 - `[UNVERIFIED]` The Logs page's Event, Client, and When filters narrow the list as they say, and
   Export CSV saves `drawbridge-events.csv` with a header row and one row per matching event
   (not just the 50 shown), in a spreadsheet: times in UTC, details as JSON, and a failed login

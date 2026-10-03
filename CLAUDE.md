@@ -37,8 +37,10 @@ setups.** What exists:
   `GET /api/traffic/clients`) draws Received, Sent, and cumulative charts with a line per
   client, and the dashboard and a client's page chart the total or the client's own. One range
   choice covers every chart (`web/src/lib/range.svelte.ts`). The log viewer filters by category,
-  event, client, and time, and exports the matching events as CSV. Also ahead of the rest of M4
-  (structured journald fields, the SSE stream, and AdGuard Home sync aren't built yet).
+  event, client, and time, and exports the matching events as CSV. Under systemd every event is
+  also a journal entry whose parts are fields (`DRAWBRIDGE_EVENT`, `DRAWBRIDGE_CLIENT`, and so
+  on; `internal/journal`). Also ahead of the rest of M4 (the SSE stream, the write-budget test,
+  and AdGuard Home sync aren't built yet).
 - The CLI, which talks to the daemon over the control socket: `server show|set`,
   `client list|add|show|pause|resume|rename|delete|config|qr`, `events`, `doctor`, and
   `admin setup-token|create|reset-password`.
@@ -260,7 +262,8 @@ These are the rules most likely to get silently broken.
   itself and would pass both layers (§6.5).
 - **Every change is an event.** Service methods that change something call `record` with the
   actor from the context (the web user, the CLI's account from the socket's peer credentials,
-  or the daemon). A new change needs its event, and a test that checks it.
+  or the daemon). A new change needs its event, and a test that checks it. `record` also logs the
+  event for the journal, so a change doesn't get a log line of its own as well.
 - **The API and its OpenAPI document agree.** Routes live only in the `routes` table in
   `internal/api/api.go`, and a test fails when it and `openapi.json` differ. Everything except
   the setup and login endpoints needs a session; every change needs the `X-Drawbridge` header.
@@ -454,6 +457,8 @@ the router allows inbound UDP 51820 to the host's stable address (with a real cl
     `/`, plus hooks for the routing table, the resolver, `statfs`, and nft), so a check is
     tested by handing it a `fstest.MapFS`. A check that can't read what it needs is a skip,
     never a fail. `service.Diagnose` feeds it the database's and the tunnel's state.
+  - `journal/` logs to journald's native protocol, so a log record's attributes become fields
+    (`DRAWBRIDGE_<KEY>`). `service.record` logs every event through it.
   - `auth/` has password hashing, tokens, and the login rate limiter; `lan/` detects the LAN
     and builds the admin allowlist; `tlscert/` makes the self-signed certificate.
 - `internal/api/` serves the JSON API (documented in `openapi.json`, with the security

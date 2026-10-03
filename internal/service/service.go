@@ -60,6 +60,8 @@ type Service struct {
 	// trafficBuf, API requests read it while the connTrackLoop goroutine writes it, so it
 	// has its own lock.
 	live liveTraffic
+	// sessionLive holds open sessions' latest bytes between the flushes that save them.
+	sessionLive sessionTotals
 }
 
 func (s *Service) now() time.Time {
@@ -293,6 +295,10 @@ func (s *Service) sessions(ctx context.Context) map[string]store.ClientSession {
 	if err != nil {
 		s.Log.Warn("can't read open client sessions", "err", err)
 		return nil
+	}
+	for id, sess := range out {
+		s.sessionLive.overlay(&sess)
+		out[id] = sess
 	}
 	return out
 }

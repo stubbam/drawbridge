@@ -44,10 +44,20 @@ func (s *Store) OpenClientSession(ctx context.Context, clientID, endpoint string
 	return cs, nil
 }
 
+// SessionBytes is an open session's endpoint and its bytes so far.
+type SessionBytes struct {
+	ID       string
+	Endpoint string
+	RxBytes  int64
+	TxBytes  int64
+}
+
+const updateSessionSQL = `UPDATE client_sessions SET endpoint = ?, rx_bytes = ?, tx_bytes = ?
+	WHERE id = ? AND ended_at IS NULL`
+
 // UpdateClientSession updates an open session's endpoint (a roam) and its bytes so far.
 func (s *Store) UpdateClientSession(ctx context.Context, id, endpoint string, rxBytes, txBytes int64) error {
-	_, err := s.db.ExecContext(ctx, `UPDATE client_sessions SET endpoint = ?, rx_bytes = ?,
-		tx_bytes = ? WHERE id = ? AND ended_at IS NULL`, endpoint, rxBytes, txBytes, id)
+	_, err := s.db.ExecContext(ctx, updateSessionSQL, endpoint, rxBytes, txBytes, id)
 	return err
 }
 

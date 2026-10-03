@@ -28,21 +28,36 @@ type TrafficSample struct {
 // written twice (shouldn't normally happen for "raw" samples, but RollupTraffic upserts
 // "hourly" ones the same way) has its bytes replaced, not summed.
 func (s *Store) InsertTraffic(ctx context.Context, samples []TrafficSample) error {
-	if len(samples) == 0 {
+	return s.SaveMonitoring(ctx, samples, nil)
+}
+
+// SaveMonitoring is a flush of what the daemon has watched since the last one: traffic buckets
+// and the bytes of open sessions, in a single transaction, so that the database is written once
+// per flush however many clients there are (CLAUDE.md, "Protect the SD card"). It writes
+// nothing, and doesn't start a transaction, when there's nothing to write.
+func (s *Store) SaveMonitoring(ctx context.Context, samples []TrafficSample, sessions []SessionBytes) error {
+	if len(samples) == 0 && len(sessions) == 0 {
 		return nil
 	}
 	return s.tx(ctx, func(tx *sql.Tx) error {
-		stmt, err := tx.PrepareContext(ctx, `INSERT INTO traffic
-			(client_id, resolution, bucket_start, rx_bytes, tx_bytes) VALUES (?, ?, ?, ?, ?)
-			ON CONFLICT (client_id, resolution, bucket_start) DO UPDATE SET
-				rx_bytes = excluded.rx_bytes, tx_bytes = excluded.tx_bytes`)
-		if err != nil {
-			return err
+		if len(samples) > 0 {
+			stmt, err := tx.PrepareContext(ctx, `INSERT INTO traffic
+				(client_id, resolution, bucket_start, rx_bytes, tx_bytes) VALUES (?, ?, ?, ?, ?)
+				ON CONFLICT (client_id, resolution, bucket_start) DO UPDATE SET
+					rx_bytes = excluded.rx_bytes, tx_bytes = excluded.tx_bytes`)
+			if err != nil {
+				return err
+			}
+			defer stmt.Close()
+			for _, sm := range samples {
+				if _, err := stmt.ExecContext(ctx, sm.ClientID, sm.Resolution,
+					formatTime(sm.BucketStart), sm.RxBytes, sm.TxBytes); err != nil {
+					return err
+				}
+			}
 		}
-		defer stmt.Close()
-		for _, sm := range samples {
-			if _, err := stmt.ExecContext(ctx, sm.ClientID, sm.Resolution,
-				formatTime(sm.BucketStart), sm.RxBytes, sm.TxBytes); err != nil {
+		for _, sb := range sessions {
+			if _, err := tx.ExecContext(ctx, updateSessionSQL, sb.Endpoint, sb.RxBytes, sb.TxBytes, sb.ID); err != nil {
 				return err
 			}
 		}

@@ -12,7 +12,7 @@ in the product name.
 > Status: **M0–M3 are built** (the tunnel, the CLI, the authenticated API, and the web UI), and
 > so are the session tracker and traffic history from M4. The kernel tests pass in CI, and
 > `docs/MANUAL_CHECKLIST.md` records what has run on real hardware. The rest of M4 (the SSE
-> stream, the write-budget test, and AdGuard Home integration) is next.
+> stream and AdGuard Home integration) is next.
 > `drawbridge doctor`, the first slice of M5, is built too; the diagnostics page isn't.
 > `docs/REQUIREMENTS.md` lists what the host and network need, and the known roadblocks.
 
@@ -623,6 +623,30 @@ stateDiagram-v2
   transaction, and a periodic job rolls old raw rows up into hourly ones, then prunes both past
   their retention windows. This keeps SD card writes low (and stays low on an SSD too, unless the
   admin explicitly widens the budget above).
+  - **The open sessions' bytes ride in the same flush.** Each poll updates a session's bytes in
+    memory, and everything that shows a session (the dashboard, a client's page, the session
+    history) reads them from there, so it's as fresh as the poll. The database gets them once per
+    flush, and a roam at once (so a restart can't announce it twice). A session that ends is
+    written when it ends. Before this, every poll wrote every connected client's session, which
+    for a household of ten devices was about 93,000 transactions and 425 MiB of log a day.
+  - **The budget** is enforced by `TestWriteBudget` (`internal/service/writebudget_test.go`),
+    which simulates a day of the daemon's loops against a real database file and reads its
+    write-ahead log from outside: every committed transaction, and every 4 KiB page one wrote.
+    Counting from the file, not inside the code that writes, means a new way of writing can't slip
+    past it. In a day of a typical household (five devices connected all day, five that connect
+    twice for 45 minutes, and a dashboard tab left open, with the traffic rollup at the end) the
+    database commits about 1,800 transactions and writes about 75 MiB of log. The budget is 2,200
+    transactions and 94 MiB. Twenty devices connected all day commit the same number of
+    transactions (a flush is one transaction for every client, and the test checks it), and write
+    about 230 MiB, which is the budget's 290 MiB. A server nobody is connected to writes nothing.
+    Pages grow with the clients because each has its own row in the traffic table's primary-key
+    index, so the way to lower the bytes is to change that index, not the flush.
+  - **For an SSD**, `--traffic-raw-interval` sets how often a flush happens, and the writes
+    follow it (the test checks that 10 s is about six times 1 min). The budget is for the default.
+  - **What the budget counts** is the database's log, a proxy for the card and not the card's own
+    physical writes: a checkpoint copies pages into the database file (at most as much again), the
+    journal is separate, and the card amplifies small writes. A day at the budget is about 35 GiB
+    of log a year, far below what an SD card is rated to take.
 - **journald:** under systemd, every event is also a journal entry, sent with journald's native
   protocol (`internal/journal`), so its parts are fields and not only text:
   `DRAWBRIDGE_EVENT` (`client.connected`), `DRAWBRIDGE_CATEGORY`, `DRAWBRIDGE_ACTOR`,
@@ -1077,14 +1101,15 @@ Each milestone ends in a usable, tested state.
   retention, charts, the log viewer with filters and CSV export, and journald structured logs.
   *Built: the session tracker, its three events, and `client_sessions`; traffic sampling with
   rollup and retention, the dashboard, client-detail, and Charts pages, and the log viewer's
-  filters and CSV export (§6.4), and structured journald fields. Not built yet: the SSE stream, the
-  write-budget test, and the AdGuard Home integration.*
+  filters and CSV export (§6.4), structured journald fields, and the write-budget test. Not built
+  yet: the SSE stream and the AdGuard Home integration.*
 - AdGuard Home integration: client name sync and the per-client DNS log.
 - **Exit:**
   - Connect, disconnect, and roam events are correct in simulated tests and on real hardware,
     with real clients *(done — docs/MANUAL_CHECKLIST.md §7)*.
   - Measured DB writes per day stay within a set budget: SD-card-safe by default, and
-    configurable for hosts on an SSD (§6.4).
+    configurable for hosts on an SSD (§6.4) *(done: `TestWriteBudget`; on real hardware,
+    docs/MANUAL_CHECKLIST.md §7)*.
 
 ### M5: Hardening and operations → **v1.0**
 

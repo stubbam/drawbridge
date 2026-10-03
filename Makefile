@@ -99,8 +99,11 @@ package: $(BIN)/nfpm ## Build binaries and .deb packages from the already-embedd
 test: test-go test-web ## Run all tests.
 
 .PHONY: test-go
-test-go: ## Run the Go tests with the race detector.
+test-go: ## Run the Go tests with the race detector, and the write-budget test without it.
 	$(GO) test -race $(GO_PKGS)
+	# A simulated day of polling takes a minute under the race detector, so TestWriteBudget
+	# skips there and runs here.
+	$(GO) test -count=1 -run 'TestWriteBudget' ./internal/service
 
 .PHONY: test-integration
 test-integration: build ## Run the kernel WireGuard tests in network namespaces (root, IPv6, wireguard module).

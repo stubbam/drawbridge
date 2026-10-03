@@ -320,6 +320,17 @@ only sign a session actually ended.
   `↓ 172 KB · ↑ 138 KB`. The host had no browser libraries installed, and a container can't
   reach the host's admin UI (the same isolation §5 checks), so the number was read from a
   browser on another machine on the LAN.
+- `[UNVERIFIED]` The daemon's writes over a day of real use are within the budget (docs/PLAN.md
+  §6.4). Read the bytes it has sent to storage twice, 24 hours apart, with `sudo grep write_bytes
+  /proc/$(systemctl show -p MainPID --value drawbridge)/io`: the difference should be less than
+  about 190 MiB for a household of ten devices, which is the budget's 94 MiB of database log and
+  at most as much again for checkpoints. (The test measures the log of a simulated day against
+  a real database; the real daemon's number includes the checkpoints, the nftables copy it saves
+  on each apply, and anything else it writes.)
+- `[UNVERIFIED]` A connected client's session bytes on the dashboard still grow at every 5 second
+  refresh although the database gets them once a minute, and after `sudo systemctl restart
+  drawbridge` the session carries on (no new `connected` event) and its bytes are right again at
+  the first poll.
 
 ## 8. Diagnostics: `drawbridge doctor` (the first M5 slice)
 

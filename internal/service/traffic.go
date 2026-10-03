@@ -215,7 +215,9 @@ func (s *Service) SampleTraffic(ctx context.Context, clients []model.Client, pee
 // flushTraffic writes every client's accumulated bytes for the buffer's current bucket,
 // then clears them (lastRx/lastTx carry forward; only the per-bucket accumulators
 // reset). A client with no traffic this bucket isn't written at all, which is both fewer
-// writes and doesn't lose information (a missing bucket means zero).
+// writes and doesn't lose information (a missing bucket means zero). The open sessions'
+// bytes are saved in the same transaction (sessionTotals), so a flush is one write however
+// many clients there are, and none when nothing moved.
 func (s *Service) flushTraffic(ctx context.Context, buf *trafficBuffer) {
 	var samples []store.TrafficSample
 	for id, st := range buf.clients {
@@ -228,9 +230,12 @@ func (s *Service) flushTraffic(ctx context.Context, buf *trafficBuffer) {
 		})
 		st.pendingRx, st.pendingTx = 0, 0
 	}
-	if err := s.Store.InsertTraffic(ctx, samples); err != nil {
+	sessions := s.sessionLive.unsaved()
+	if err := s.Store.SaveMonitoring(ctx, samples, sessions); err != nil {
 		s.Log.Warn("can't flush traffic samples", "err", err)
+		return
 	}
+	s.sessionLive.markSaved(sessions...)
 }
 
 // TrafficRetention rolls old "raw" samples up into "hourly" ones, then prunes past-

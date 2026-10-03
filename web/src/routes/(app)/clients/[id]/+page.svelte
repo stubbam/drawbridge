@@ -11,6 +11,7 @@
 		type TrafficRange,
 		type TrafficSeries
 	} from '$lib/api';
+	import { saveText } from '$lib/download';
 	import { errorMessage } from '$lib/errors';
 	import {
 		clientState,
@@ -119,16 +120,7 @@
 	async function download() {
 		const conf = await fetchConfig();
 		if (!conf || !client) return;
-		const url = URL.createObjectURL(new Blob([conf], { type: 'text/plain' }));
-		const a = document.createElement('a');
-		a.href = url;
-		a.download = configFileName(client.name);
-		// Some browsers only download from a link in the document, and cancel a download
-		// whose URL is revoked at once.
-		document.body.append(a);
-		a.click();
-		a.remove();
-		setTimeout(() => URL.revokeObjectURL(url), 10_000);
+		saveText(configFileName(client.name), conf);
 		void load();
 	}
 

@@ -50,7 +50,7 @@ test('first-run setup creates the admin account, sets the endpoint, and picks th
 	// Only the address that answered reaches the clients.
 	expect(cli('server', 'show')).toMatch(/^DNS:\s+10\.8\.0\.1$/m);
 	await navigate(page, 'Logs');
-	await expect(page.getByText('Completed setup')).toBeVisible();
+	await expect(page.getByRole('cell', { name: 'Completed setup' })).toBeVisible();
 	expect(problems).toEqual([]);
 });
 
@@ -424,7 +424,7 @@ test('logging out, a wrong password, and returning to the page', async ({ page }
 	await page.getByLabel('Password').fill(admin.password);
 	await page.getByRole('button', { name: 'Log In' }).click();
 	await expect(page).toHaveURL(/\/logs$/);
-	await expect(page.getByText('Failed login')).toBeVisible();
+	await expect(page.getByRole('cell', { name: 'Failed login' })).toBeVisible();
 
 	// next= never leaves the site.
 	await logOut(page);

@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"context"
+	"encoding/csv"
 	"encoding/json"
 	"io"
 	"log/slog"
@@ -13,6 +14,7 @@ import (
 	"net/url"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -701,4 +703,130 @@ func TestDNSCheckAndChoice(t *testing.T) {
 	if !strings.Contains(string(cfg.body), "\nDNS = 10.8.0.1\n") {
 		t.Fatalf("client config:\n%s", cfg.body)
 	}
+}
+
+func TestEventsFilterByKindAndTime(t *testing.T) {
+	svc := newService(t)
+	srv := newServer(t, svc)
+	b, _ := loggedIn(t, svc, srv)
+	ctx := context.Background()
+	t0 := time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
+	for i, kind := range []string{"client.connected", "client.disconnected", "client.connected"} {
+		e := store.Event{Time: t0.AddDate(0, 0, i), Kind: kind, Category: "connection", Actor: "drawbridge", Via: "system"}
+		if err := svc.Store.AddEvent(ctx, e); err != nil {
+			t.Fatal(err)
+		}
+	}
+	count := func(query string) int {
+		t.Helper()
+		var events []views.EventView
+		b.expect(http.StatusOK, "GET", "/api/events?category=connection&"+query, nil).decode(t, &events)
+		return len(events)
+	}
+	if n := count("kind=client.connected"); n != 2 {
+		t.Errorf("kind=client.connected: %d events, want 2", n)
+	}
+	if n := count("from=" + url.QueryEscape(t0.AddDate(0, 0, 1).Format(time.RFC3339))); n != 2 {
+		t.Errorf("from the second day: %d events, want 2", n)
+	}
+	if n := count("to=" + url.QueryEscape(t0.AddDate(0, 0, 1).Format(time.RFC3339))); n != 1 {
+		t.Errorf("to the second day: %d events, want 1", n)
+	}
+	b.expect(http.StatusBadRequest, "GET", "/api/events?from=yesterday", nil)
+	b.expect(http.StatusBadRequest, "GET", "/api/events?kind=NOT%20A%20KIND", nil)
+	b.expect(http.StatusBadRequest, "GET", "/api/events?format=xml", nil)
+}
+
+func TestEventsExportAsCSV(t *testing.T) {
+	svc := newService(t)
+	srv := newServer(t, svc)
+	b, _ := loggedIn(t, svc, srv)
+	ctx := context.Background()
+
+	// A stranger's failed login records whatever name they typed, which a spreadsheet would
+	// run as a formula if it were left bare.
+	anon := newBrowser(t, srv)
+	anon.expect(http.StatusUnauthorized, "POST", "/api/auth/login",
+		views.LoginRequest{Username: `=HYPERLINK("http://example.com","x")`, Password: "wrong"})
+	var created views.ClientResult
+	b.expect(http.StatusCreated, "POST", "/api/clients", views.NewClientRequest{Name: "phone"}).decode(t, &created)
+
+	r := b.expect(http.StatusOK, "GET", "/api/events?format=csv", nil)
+	for header, want := range map[string]string{
+		"Content-Type":           "text/csv; charset=utf-8",
+		"Content-Disposition":    `attachment; filename="drawbridge-events.csv"`,
+		"X-Content-Type-Options": "nosniff",
+		"Cache-Control":          "no-store",
+	} {
+		if got := r.header.Get(header); got != want {
+			t.Errorf("%s = %q, want %q", header, got, want)
+		}
+	}
+	rows := parseCSV(t, r.body)
+	if got := strings.Join(rows[0], ","); got != strings.Join(views.EventsCSVHeader, ",") {
+		t.Fatalf("header row %q", got)
+	}
+	var kinds []string
+	for _, row := range rows[1:] {
+		kinds = append(kinds, row[1])
+		if row[1] == "auth.login_failed" && row[3] != `'=HYPERLINK("http://example.com","x")` {
+			t.Errorf("failed login's actor is %q, want it to start with an apostrophe", row[3])
+		}
+	}
+	if got, want := strings.Join(kinds, " "), "client.added auth.login_failed auth.login auth.admin_created"; got != want {
+		t.Fatalf("events %q, want %q (newest first)", got, want)
+	}
+	if rows[1][7] != "phone" || rows[1][6] != created.Client.ID || rows[1][8] == "" {
+		t.Errorf("client.added row %q: want the client's ID and name, and its details", rows[1])
+	}
+
+	// The same filters as the JSON.
+	rows = parseCSV(t, b.expect(http.StatusOK, "GET", "/api/events?format=csv&kind=auth.login", nil).body)
+	if len(rows) != 2 || rows[1][1] != "auth.login" {
+		t.Errorf("kind=auth.login exported %q", rows)
+	}
+	rows = parseCSV(t, b.expect(http.StatusOK, "GET", "/api/events?format=csv&client="+created.Client.ID, nil).body)
+	if len(rows) != 2 {
+		t.Errorf("client=%s exported %d rows, want a header and one event", created.Client.ID, len(rows))
+	}
+	// Nothing matches: still a CSV, with only its header.
+	r = b.expect(http.StatusOK, "GET", "/api/events?format=csv&kind=nothing.like.it", nil)
+	if rows = parseCSV(t, r.body); len(rows) != 1 || r.header.Get("Content-Type") != "text/csv; charset=utf-8" {
+		t.Errorf("an empty export is %q (%s), want only the header", rows, r.header.Get("Content-Type"))
+	}
+
+	// It isn't a page: limit doesn't apply, and the export reads past a page of the store.
+	const extra = 1100
+	for i := range extra {
+		e := store.Event{Kind: "client.connected", Category: "connection", Actor: "drawbridge", Via: "system",
+			Data: map[string]string{"n": strconv.Itoa(i)}}
+		if err := svc.Store.AddEvent(ctx, e); err != nil {
+			t.Fatal(err)
+		}
+	}
+	rows = parseCSV(t, b.expect(http.StatusOK, "GET", "/api/events?format=csv&limit=5", nil).body)
+	if want := 1 + 4 + extra; len(rows) != want {
+		t.Fatalf("exported %d rows, want %d: a header, the 4 earlier events, and %d more", len(rows), want, extra)
+	}
+	seen := map[string]bool{}
+	for _, row := range rows[1:] {
+		if row[1] == "client.connected" {
+			seen[row[8]] = true
+		}
+	}
+	if len(seen) != extra {
+		t.Errorf("%d distinct events read, want %d: a page boundary dropped or repeated one", len(seen), extra)
+	}
+
+	// It needs a session like everything else.
+	anon.expect(http.StatusUnauthorized, "GET", "/api/events?format=csv", nil)
+}
+
+func parseCSV(t *testing.T, data []byte) [][]string {
+	t.Helper()
+	rows, err := csv.NewReader(bytes.NewReader(data)).ReadAll()
+	if err != nil {
+		t.Fatalf("parsing %q: %v", data, err)
+	}
+	return rows
 }

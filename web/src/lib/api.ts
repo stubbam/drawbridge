@@ -147,6 +147,12 @@ export interface DrawbridgeEvent {
 export interface EventFilter {
 	client?: string;
 	category?: 'admin' | 'system' | 'connection';
+	/** One kind of event, such as `client.connected`. */
+	kind?: string;
+	/** Only events at or after this time (an ISO 8601 string). */
+	from?: string;
+	/** Only events before this time. */
+	to?: string;
 	before?: number;
 	limit?: number;
 }
@@ -219,6 +225,16 @@ export function setFetch(fn: typeof fetch): void {
 	fetchFn = fn;
 }
 
+function eventQuery(filter: EventFilter, format?: 'csv'): string {
+	const q = new URLSearchParams();
+	for (const [k, v] of Object.entries(filter)) {
+		if (v !== undefined && v !== '') q.set(k, String(v));
+	}
+	if (format) q.set('format', format);
+	const qs = q.toString();
+	return qs ? '?' + qs : '';
+}
+
 async function request<T>(method: Method, path: string, body?: unknown): Promise<T> {
 	// Every change carries X-Drawbridge, which a cross-site request can't (the CSRF check).
 	const headers: Record<string, string> = { 'X-Drawbridge': '1' };
@@ -288,14 +304,14 @@ export const api = {
 	/** The client's WireGuard config. Every download is recorded in the event log. */
 	clientConfig: (id: string) => request<string>('GET', clientPath(id, '/config')),
 
-	events: (filter: EventFilter = {}) => {
-		const q = new URLSearchParams();
-		for (const [k, v] of Object.entries(filter)) {
-			if (v !== undefined && v !== '') q.set(k, String(v));
-		}
-		const qs = q.toString();
-		return request<DrawbridgeEvent[]>('GET', '/api/events' + (qs ? '?' + qs : ''));
-	},
+	events: (filter: EventFilter = {}) =>
+		request<DrawbridgeEvent[]>('GET', '/api/events' + eventQuery(filter)),
+	/** Every event that matches the filter, as the text of a CSV file. */
+	eventsCsv: (filter: EventFilter = {}) =>
+		request<string>(
+			'GET',
+			'/api/events' + eventQuery({ ...filter, before: undefined, limit: undefined }, 'csv')
+		),
 
 	/** Every client's traffic history, summed: the dashboard's bandwidth chart. */
 	traffic: (range: TrafficRange = '24h') =>

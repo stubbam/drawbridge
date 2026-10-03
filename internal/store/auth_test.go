@@ -215,6 +215,14 @@ func TestEvents(t *testing.T) {
 		"category": {EventFilter{Category: "system"}, 1},
 		"limit":    {EventFilter{Limit: 2}, 2},
 		"before":   {EventFilter{Before: all[1].ID}, 1},
+		"kind":     {EventFilter{Kind: "client.paused"}, 1},
+		"no kind":  {EventFilter{Kind: "client.deleted"}, 0},
+		"from":     {EventFilter{From: t0.Add(time.Second)}, 2},
+		"from, at": {EventFilter{From: t0}, 3},
+		"to":       {EventFilter{To: t0.Add(time.Second)}, 1},
+		"to, at":   {EventFilter{To: t0}, 0},
+		"window":   {EventFilter{From: t0.Add(-time.Hour), To: t0.Add(time.Hour)}, 1},
+		"all":      {EventFilter{ClientID: "c1", Category: "admin", Kind: "client.added", From: t0, To: t0.Add(time.Hour)}, 1},
 	} {
 		got, err := s.Events(ctx, tc.f)
 		if err != nil || len(got) != tc.want {

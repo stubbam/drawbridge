@@ -11,8 +11,8 @@ in the product name.
 
 > Status: **M0–M3 are built** (the tunnel, the CLI, the authenticated API, and the web UI), and
 > so are the session tracker and traffic history from M4. The kernel tests pass in CI, and
-> `docs/MANUAL_CHECKLIST.md` records what has run on real hardware. The rest of M4 (the log
-> viewer's CSV export, structured journald fields, and AdGuard Home integration) is next.
+> `docs/MANUAL_CHECKLIST.md` records what has run on real hardware. The rest of M4 (structured
+> journald fields, the SSE stream, and AdGuard Home integration) is next.
 > `drawbridge doctor`, the first slice of M5, is built too; the diagnostics page isn't.
 > `docs/REQUIREMENTS.md` lists what the host and network need, and the known roadblocks.
 
@@ -544,8 +544,9 @@ page's bandwidth and cumulative charts, and its session-history list are built t
 §9). Every chart has the same range control (1m/1h/12h/24h/7d/30d/90d), and the choice is one for
 the whole app, remembered in the browser. A Charts page (an icon in the header, between Clients
 and Server Settings) shows the same history per client, as Received, Sent, Cumulative Received,
-and Cumulative Sent charts, stacked (`GET /api/traffic/clients`). The log viewer's CSV export,
-structured journald fields, and AdGuard Home integration (§6.3) are still pending.*
+and Cumulative Sent charts, stacked (`GET /api/traffic/clients`). The log viewer's filters and CSV
+export are built too (below). Structured journald fields and AdGuard Home integration (§6.3) are
+still pending.*
 
 ```mermaid
 stateDiagram-v2
@@ -563,6 +564,15 @@ stateDiagram-v2
     `qr_shown`, and `keys_rotated`.
   - System events: `apply_ok`, `apply_failed`, `drift_corrected`, `login_ok`, `login_failed`, and
     `settings_changed`.
+  - **The log viewer** (the Logs page) filters by category, by kind of event, by client, and by
+    time (the last hour, 24 hours, 7 days, or 30 days, counted back from when the list loads), and
+    pages back 50 events at a time. The API takes the same filters, with `from` and `to` as exact
+    RFC 3339 times (from inclusive, to exclusive), so a script can ask about any period. **Export
+    CSV** (`format=csv`) sends every event that matches the filters, not a page: one row per event,
+    newest first, with the time in UTC (RFC 3339) and the event's data as a JSON object in the last
+    column. A cell that starts with `=`, `+`, `-`, or `@` begins with an apostrophe, so a
+    spreadsheet never runs it as a formula: a failed login's actor is whatever name a stranger
+    typed.
 - **Sessions table:** one row per connection (start, end, endpoint, bytes), which gives a
   per-client connection history.
 - **Traffic history:**
@@ -793,7 +803,8 @@ GET    /api/clients/{id}                 PATCH /api/clients/{id} (rename)   DELE
 POST   /api/clients/{id}/pause           POST /api/clients/{id}/resume
 GET    /api/clients/{id}/config          text/plain; attachment
 
-GET    /api/events?client=&category=&before=&limit=
+GET    /api/events?client=&category=&kind=&from=&to=&before=&limit=&format=json|csv
+                                         csv sends every matching event as a file (M4)
 
 GET    /api/clients/{id}/traffic?range=1m|1h|12h|24h|7d|30d|90d            (M4)
 GET    /api/traffic?range=1m|1h|12h|24h|7d|30d|90d   summed across clients (M4)
@@ -809,7 +820,6 @@ GET    /api/dns                          PUT /api/dns                      (M4)
 GET    /api/integrations/adguard         PUT /api/integrations/adguard     (M4)
 POST   /api/integrations/adguard/test    check credentials and DNS on the VPN addresses
 GET    /api/clients/{id}/dns-log         recent queries from AdGuard Home  (M4)
-GET    /api/events?from=&to=&format=csv                                    (M4)
 GET    /api/stream                       SSE: peer status every 5 s + live events (M4)
 GET    /api/system/health                diagnostics                       (M5)
 POST   /api/system/backup                POST /api/system/restore          (M5)
@@ -833,7 +843,7 @@ can be added later (i18n).
 | **Charts** | Received, Sent, Cumulative Received, and Cumulative Sent charts, stacked at the dashboard chart's width, with a line per client, a range control, a legend, and a tooltip that follows the cursor (§6.4) |
 | **Server settings** | The sections from §6.2, each marked with its impact |
 | **DNS** | Presets and custom resolvers, search domains, AdGuard Home connection (address, account, test button, sync status) |
-| **Logs** | Events table with filters and CSV export, plus an audit tab |
+| **Logs** | Events table with filters (category, event, client, time) and CSV export, plus an audit tab |
 | **System** | Diagnostics, backup/restore, admin account and 2FA, sessions, TLS, retention, about |
 
 Libraries: Tailwind CSS, uPlot for charts (small and fast), and `qrcode` for rendering QR codes
@@ -1051,8 +1061,9 @@ Each milestone ends in a usable, tested state.
 - The session tracker, events and `client_sessions`, traffic sampling with downsampling and
   retention, charts, the log viewer with filters and CSV export, and journald structured logs.
   *Built: the session tracker, its three events, and `client_sessions`; traffic sampling with
-  rollup and retention, and the dashboard and client-detail charts (§6.4). Not built yet: the log
-  viewer's CSV export, structured journald fields, and the AdGuard Home integration.*
+  rollup and retention, the dashboard, client-detail, and Charts pages, and the log viewer's
+  filters and CSV export (§6.4). Not built yet: structured journald fields, the SSE stream, the
+  write-budget test, and the AdGuard Home integration.*
 - AdGuard Home integration: client name sync and the per-client DNS log.
 - **Exit:**
   - Connect, disconnect, and roam events are correct in simulated tests and on real hardware,

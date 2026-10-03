@@ -7,6 +7,7 @@ import {
 	endpointAddress,
 	eventActor,
 	eventDetails,
+	eventKinds,
 	eventLabel,
 	formatAgo,
 	formatBitrate,
@@ -91,6 +92,18 @@ describe('events', () => {
 	it('labels kinds, and passes unknown ones through', () => {
 		expect(eventLabel('client.paused')).toBe('Paused a client');
 		expect(eventLabel('something.new')).toBe('something.new');
+	});
+	it('lists the kinds of event, by category', () => {
+		const labels = (category?: DrawbridgeEvent['category']) =>
+			eventKinds(category).map((k) => k.label);
+		expect(labels('connection')).toEqual(['Connected', 'Disconnected', 'Roamed']);
+		expect(labels('system')).toEqual(['Corrected drift']);
+		expect(labels('admin')).toContain('Failed login');
+		expect(labels('admin')).not.toContain('Connected');
+		// With no category, every kind, each with a label of its own.
+		expect(labels()).toHaveLength(labels('admin').length + 4);
+		expect(eventKinds('').map((k) => k.kind)).toContain('client.connected');
+		for (const { kind, label } of eventKinds()) expect(eventLabel(kind)).toBe(label);
 	});
 	it('lists details sorted by key', () => {
 		expect(eventDetails(e({ data: { mtu: '1420 → 1380', dns: 'a → b' } }))).toBe(

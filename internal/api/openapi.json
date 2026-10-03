@@ -1027,7 +1027,7 @@
             "$ref": "#/components/responses/Forbidden"
           },
           "200": {
-            "description": "Newest first.",
+            "description": "Newest first. As JSON, one page (`limit` and `before`); as CSV, every matching event.",
             "content": {
               "application/json": {
                 "schema": {
@@ -1035,6 +1035,12 @@
                   "items": {
                     "$ref": "#/components/schemas/Event"
                   }
+                }
+              },
+              "text/csv": {
+                "schema": {
+                  "type": "string",
+                  "description": "A header row (time, event, category, actor, via, source_ip, client_id, client_name, details), then a row per event. Times are RFC 3339 in UTC; details are the event's data as a JSON object. A cell that starts with =, +, -, or @ begins with an apostrophe, so a spreadsheet never runs it as a formula. Sent as an attachment, drawbridge-events.csv."
                 }
               }
             }
@@ -1065,6 +1071,45 @@
                 "connection"
               ]
             }
+          },
+          {
+            "name": "kind",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_.]{0,63}$"
+            },
+            "description": "Only events of this kind, such as client.connected."
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "description": "Only events at or after this time."
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "description": "Only events before this time. Must be after from."
+          },
+          {
+            "name": "format",
+            "in": "query",
+            "schema": {
+              "enum": [
+                "json",
+                "csv"
+              ],
+              "default": "json"
+            },
+            "description": "csv sends every matching event as a file; limit doesn't apply to it."
           },
           {
             "name": "before",

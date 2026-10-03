@@ -43,7 +43,7 @@ setups.** What exists:
   within what an SD card can take. The dashboard, client pages, and log get their status and
   new events from a Server-Sent Events stream (`GET /api/stream`, `internal/api/stream.go`,
   `web/src/lib/live.svelte.ts`), and poll only when it can't be had. Also ahead of the rest of M4
-  (AdGuard Home sync isn't built yet).
+  (AdGuard Home sync isn't built yet; its API client, `internal/adguard`, is).
 - The CLI, which talks to the daemon over the control socket: `server show|set`,
   `client list|add|show|pause|resume|rename|delete|config|qr`, `events`, `doctor`, and
   `admin setup-token|create|reset-password`.
@@ -314,14 +314,43 @@ NetworkManager. Don't generalize from it: on an ifupdown host, turning on IPv6 f
 the host's own SLAAC address unless `accept_ra` is 2 (docs/REQUIREMENTS.md). The integration tests
 prove that in namespaces; a real ifupdown host hasn't run it.
 
-**AdGuard Home's API.** This was checked against `openapi/openapi.yaml` on its `master` branch,
-not yet against a running install:
+**AdGuard Home's API** (2026-10-03: AdGuard Home v0.107.79 in a container, with real queries sent
+to it; the OpenAPI document says none of the surprises below). `internal/adguard` is written to
+this, its fake (`adguardtest`) answers this way, and `TestContract` runs the same checks against
+the fake and, when `DRAWBRIDGE_ADGUARD_URL`, `_USER`, and `_PASSWORD` are set, a real one:
 
-- Everything is under `/control`, with HTTP basic auth.
-- Persistent clients use `/control/clients/add`, `/update`, and `/delete`. A client's `ids`
-  accept IPs, CIDRs, MACs, or ClientIDs.
-- `/control/querylog?search=` filters by domain or client IP.
-- DNS rewrites are under `/control/rewrite/*`.
+- Everything is under `/control`, with HTTP basic auth. `GET /control/status` checks an address
+  and an account.
+- Persistent clients: `GET /control/clients` (`clients` is `null` when there are none), and
+  `POST /control/clients/add`, `/update` (`{name, data}`), and `/delete` (`{name}`). A client's
+  `ids` accept IPs, CIDRs, MACs, or ClientIDs. AdGuard Home stores addresses in their short
+  lowercase form, lowercases the rest, lists addresses first, and sorts the clients by name.
+- **Every refusal is a 400 with a plain-text message**, never a 404 or a 409: a duplicate name
+  or address (the message names the other client), an empty name, no `ids`, an invalid ID, and
+  an update or delete of a client that isn't there. Names are case-sensitive (`min` and `MIN`
+  coexist). A CIDR doesn't clash with an address inside it.
+- **A client added with only a name and `ids` is stored with `use_global_settings` and
+  `use_global_blocked_services` off, and filtering with them, so it isn't ad-blocked.** A query
+  for a blocked domain from such a client's address was answered by the upstream resolver. With
+  both flags `true` it was blocked, as for any other address. Name sync must send both.
+- **An update replaces the whole client.** An update that sent only `name` and `ids` wiped the
+  tags, upstreams, and per-client settings. Send back every field the listing returned.
+- **Five failed logins block the caller's address for 15 minutes**, and then even the right
+  password gets a bare 401 with no body, so a 401 can't tell a typo from a block. A request with
+  no credentials counts as a failure. Never retry a 401 on a timer.
+- `/control/querylog?search=` is a **substring** match on the client's address and on the
+  domain: `10.8.0.1` also found `10.8.0.12` and `10.8.0.100`, and IPv6 addresses are logged in
+  their canonical form (a search for an expanded or uppercase spelling found nothing). It pages
+  with `older_than=<the page's oldest time>`, and takes a `limit` as big as 100000. A blocked
+  entry has `reason: FilteredBlackList` and the rule in `rules[0].text`.
+  `/control/querylog/config` has `enabled` and `anonymize_client_ip`, either of which would
+  empty a client's view.
+- To run one: `adguard/adguardhome` with a seeded `AdGuardHome.yaml` (an `http.address`, a user
+  whose bcrypt hash `htpasswd -bnBC 10 "" password` makes, `dns.bind_hosts`, and a
+  `user_rules` entry such as `||blocked.example^`) skips its install wizard. Sources other
+  than 127.0.0.1 are easy in a sidecar sharing its network namespace
+  (`docker run --network container:<name>`), which can bind any `127.x.y.z` address.
+- DNS rewrites are under `/control/rewrite/*` (documented, not yet checked).
 
 **The cloud container** (x86_64, kernel 6.18, Go 1.24.7 and Node 22 with npm 10.9.7
 preinstalled, running as root):
@@ -470,6 +499,10 @@ the router allows inbound UDP 51820 to the host's stable address (with a real cl
     stream subscribes. It never waits for a subscriber.
   - `journal/` logs to journald's native protocol, so a log record's attributes become fields
     (`DRAWBRIDGE_<KEY>`). `service.record` logs every event through it.
+  - `adguard/` is the AdGuard Home REST client (persistent clients and the query log), and
+    `adguard/adguardtest` an in-memory AdGuard Home that answers the way the real one was
+    observed to ("Verified facts"). Tests use it, never a hand-written stub, so they fail the way
+    the real one would.
   - `auth/` has password hashing, tokens, and the login rate limiter; `lan/` detects the LAN
     and builds the admin allowlist; `tlscert/` makes the self-signed certificate.
 - `internal/api/` serves the JSON API (documented in `openapi.json`, with the security

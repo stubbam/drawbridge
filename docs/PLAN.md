@@ -12,7 +12,7 @@ in the product name.
 > Status: **M0–M3 are built** (the tunnel, the CLI, the authenticated API, and the web UI), and
 > so are the session tracker and traffic history from M4. The kernel tests pass in CI, and
 > `docs/MANUAL_CHECKLIST.md` records what has run on real hardware. The rest of M4 (the AdGuard
-> Home integration) is next.
+> Home integration) is next: its API client is built, and name sync and the DNS log are not.
 > `drawbridge doctor`, the first slice of M5, is built too; the diagnostics page isn't.
 > `docs/REQUIREMENTS.md` lists what the host and network need, and the known roadblocks.
 
@@ -524,6 +524,57 @@ AdGuard Home in particular gets an optional integration (below).
     such as `<client>.vpn.lan`.
   - If AdGuard Home is unreachable, VPN management keeps working. Sync retries in the background,
     and the dashboard shows a warning.
+  - **What AdGuard Home does** (checked against v0.107.79 on 2026-10-03, and written into the
+    client, `internal/adguard`, and its fake; the OpenAPI document says none of this):
+    - Every refusal is a plain-text 400, never a 404 or a 409, so the sync decides from a fresh
+      listing and never reads a message.
+    - **A client added with only a name and addresses isn't ad-blocked.** It's stored with
+      "use global settings" off, and its own filtering with it, so a query for a blocked domain
+      from its address is answered by the upstream resolver. Sync adds clients with the global
+      settings on.
+    - **An update replaces the whole client.** A rename that sends only the name and addresses
+      wipes the tags, upstreams, and settings the admin set in AdGuard Home. Sync reads the client
+      back and changes only the name and the addresses.
+    - **Five failed logins block the caller for 15 minutes**, and then even the right password
+      gets a bare 401. A 401 stops the sync, and it isn't retried on a timer: the admin changes
+      the settings or presses Test, which is one attempt.
+    - The query log's search is a **substring** match, so 10.8.0.2 also finds 10.8.0.20. The
+      DNS log keeps only entries from exactly the client's addresses, and pages past its busy
+      neighbors.
+  - **How name sync works (M4).** Like the reconciler, it's level-triggered: it lists AdGuard
+    Home's persistent clients, compares them with Drawbridge's, and makes up the difference. It
+    runs at startup, shortly after a client is added, renamed, or deleted, and every five
+    minutes, so an AdGuard Home that was down, or a name the admin deleted there, catches up.
+    - **Drawbridge changes only the clients it made.** It records the name and addresses it last
+      wrote for each client (§7), and never edits or deletes a persistent client it has no record
+      of. A client of the same name that Drawbridge didn't make is a conflict, shown in the UI for
+      the admin to settle in AdGuard Home, unless its addresses are exactly the client's, which
+      Drawbridge adopts. AdGuard Home's identifiers the admin added to a client Drawbridge made (a
+      MAC address, say) stay.
+    - Paused clients are synced too, because they keep their addresses.
+    - Its status (the last sync, the error, the conflicts) is kept in memory, and a sync that
+      changes nothing writes nothing, because of the SD card (§6.4).
+  - **Per-client DNS log (M4)** shows the client's latest queries from the log, 50 of them: when,
+    the name and type, the answer, and whether AdGuard Home blocked it and by what rule. It says
+    so when AdGuard Home's log is off or hides client addresses, which would leave the view empty
+    for a reason that isn't obvious.
+  - **Other resolvers.** AdGuard Home is the first integration, not the only one the design
+    allows. Pi-hole is the likeliest next (its v6 API only). Without an integration, a host's
+    resolver of any kind still works as the clients' DNS: the check, the wizard, and `doctor`
+    only send it a query. The integration is a seam, kept thin on purpose:
+    - Only one resolver can answer on the VPN addresses, so one integration is active at a time,
+      and it's stored as a single row with a `kind` (§7).
+    - The sync (names to make up, a record of what Drawbridge wrote, conflicts, status) and the DNS
+      log's shape (when, name, type, answer, blocked, rule) don't mention AdGuard Home. Its
+      client, `internal/adguard`, holds everything that does: its calls, its login, and the
+      behavior above.
+    - The sync's interface is drawn from AdGuard Home's calls alone for now. A second provider
+      will show what is shared, and the interface changes then rather than before. Pi-hole differs
+      in ways worth checking on a live instance first: its login is a session (`POST /api/auth`,
+      a session ID that lapses after 300 s of disuse, a limit on concurrent sessions, a rate
+      limit, and an optional TOTP), with no username, and it has no named persistent client, so
+      naming a client is likely a local DNS record, which also makes the name resolvable (what
+      the M6 client hostnames do for AdGuard Home).
 - **Health check:** if clients are pointed at the host but nothing answers on port 53 at the VPN
   addresses, the UI shows a warning.
 
@@ -834,8 +885,12 @@ auth_sessions       id PK (public, for revoking), token_hash UNIQUE, user_id, cr
 setup_token         (singleton) token_enc, created_at; deleted once the admin exists
 one_time_links      token_hash PK, client_id, expires_at, used_at NULL        (M6)
 api_tokens          id, name, token_hash, scopes, created_at, last_used_at    (M6)
-adguard             (singleton) enabled, base_url, username, password_enc,
-                    sync_names, last_sync_at NULL, last_error NULL             (M4)
+dns_integration     (singleton) kind ('adguard'), enabled, base_url, username NULL,
+                    password_enc, sync_names                                   (M4)
+dns_integration_clients
+                    client_id PK, name, ids JSON: what sync last wrote for a client, so
+                    it changes only what it made. No foreign key: a deleted client's row is
+                    how sync knows to delete its name. The sync's status isn't stored.  (M4)
 schema_migrations   version, applied_at
 ```
 
@@ -1129,7 +1184,7 @@ Each milestone ends in a usable, tested state.
   *Built: the session tracker, its three events, and `client_sessions`; traffic sampling with
   rollup and retention, the dashboard, client-detail, and Charts pages, and the log viewer's
   filters and CSV export (§6.4), structured journald fields, the write-budget test, and the SSE
-  stream. Not built yet: the AdGuard Home integration.*
+  stream. The AdGuard Home client is built (§6.3); name sync and the DNS log aren't.*
 - AdGuard Home integration: client name sync and the per-client DNS log.
 - **Exit:**
   - Connect, disconnect, and roam events are correct in simulated tests and on real hardware,
@@ -1159,6 +1214,8 @@ Each milestone ends in a usable, tested state.
 - ACME DNS-01 certificates. (A built-in DDNS updater isn't planned: existing clients such as
   ddclient, or a router's built-in one, already cover it.)
 - AdGuard Home extras: a per-client ad-blocking switch and client hostnames (DNS rewrites).
+- A Pi-hole integration (its v6 API), if wanted: the same name sync and DNS log through the
+  provider seam (§6.3), after checking its API on a live instance as AdGuard Home's was.
 - Prometheus metrics, API tokens, and multiple admins.
 - Import from `wg-quick` or wg-easy.
 - Opt-in flow logging, GeoIP, i18n, and multiple WireGuard interfaces.

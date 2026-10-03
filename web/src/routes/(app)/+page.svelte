@@ -130,6 +130,12 @@
 		<code>sudo systemctl start drawbridge-tunnel</code>.
 	</p>
 {/if}
+{#if status?.adguard_warning}
+	<p class="alert-warning" role="status" data-testid="adguard-warning">
+		{status.adguard_warning}
+		<a class="font-medium underline" href={resolve('/settings')}>See Settings</a>.
+	</p>
+{/if}
 {#if settings && !settings.endpoint}
 	<p class="alert-warning" role="status">
 		Clients can't get a config until the server's public address is set.

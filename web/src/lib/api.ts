@@ -62,6 +62,8 @@ export interface ServerStatus {
 	clients: number;
 	paused: number;
 	online: number;
+	/** Set when the AdGuard Home name sync needs the admin; absent when all is well. */
+	adguard_warning?: string;
 }
 
 /** A `status` message of the stream: what the server's status and the client list return, together. */
@@ -91,6 +93,28 @@ export interface AdGuardConnection {
 	/** Empty when AdGuard Home has no login. */
 	username: string;
 	has_password: boolean;
+	/** The admin's switch for using the connection at all. */
+	enabled: boolean;
+	/** Whether Drawbridge writes its clients' names into AdGuard Home. Matters only while enabled. */
+	sync_names: boolean;
+	sync: AdGuardSync;
+}
+
+/**
+ * How the name sync is doing. `off`: not turned on. `pending`: no pass has finished yet. `ok`: the
+ * last pass finished, and may have conflicts. `error`: it failed, and another is coming. `stopped`:
+ * AdGuard Home refused the account, so nothing is asked until the connection changes or a test
+ * or Sync now shows it works.
+ */
+export interface AdGuardSync {
+	state: 'off' | 'pending' | 'ok' | 'error' | 'stopped';
+	/** When a pass last finished without failing. */
+	last_sync: string | null;
+	error?: string;
+	/** How many clients have their name in AdGuard Home. */
+	synced: number;
+	/** Clients that couldn't be named there: a name or an address its own client has. */
+	conflicts: { client_id: string; client: string; reason: string }[];
 }
 
 /** Saves or tests a connection; omitted fields stay as they are. */
@@ -99,6 +123,9 @@ export interface AdGuardRequest {
 	username?: string;
 	/** Replaces the saved password; "" removes it. Needed when the address or username changes. */
 	password?: string;
+	/** The switches take no password. */
+	enabled?: boolean;
+	sync_names?: boolean;
 }
 
 /** What a test of the connection to AdGuard Home found. A connection that fails is ok: false. */
@@ -337,6 +364,7 @@ export const api = {
 	saveAdGuard: (r: AdGuardRequest) =>
 		request<AdGuardConnection>('PUT', '/api/integrations/adguard', r),
 	removeAdGuard: () => request<AdGuardConnection>('DELETE', '/api/integrations/adguard'),
+	syncAdGuard: () => request<AdGuardSync>('POST', '/api/integrations/adguard/sync'),
 	testAdGuard: (r: AdGuardRequest) =>
 		request<AdGuardTest>('POST', '/api/integrations/adguard/test', r),
 

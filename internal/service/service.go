@@ -64,8 +64,13 @@ type Service struct {
 	sessionLive sessionTotals
 	// bus hands each recorded event to the streams that are watching.
 	bus eventBus
+	// AdGuardSyncInterval is how often the name sync looks again when nothing prompted it, and
+	// AdGuardSyncSettle how long it waits after a change; zero means the defaults (adguardsync.go).
+	AdGuardSyncInterval, AdGuardSyncSettle time.Duration
 	// adguardRefused is the last account AdGuard Home refused (adguard.go).
 	adguardRefused refusedLogin
+	// adguardSync is the name sync's state (adguardsync.go).
+	adguardSync adguardSyncState
 }
 
 func (s *Service) now() time.Time {
@@ -214,6 +219,9 @@ type Status struct {
 	Paused   int
 	// Online counts clients with a handshake within OnlineWithin.
 	Online int
+	// AdGuardWarning is a line for the admin when the AdGuard Home name sync needs them, or ""
+	// (adguardsync.go).
+	AdGuardWarning string
 }
 
 // Status returns the tunnel's state and client counts.
@@ -229,7 +237,7 @@ func (s *Service) Snapshot(ctx context.Context) (Status, []ClientStatus, error) 
 	if err != nil {
 		return Status{}, nil, err
 	}
-	var out Status
+	out := Status{AdGuardWarning: s.adguardSync.warning()}
 	if _, err := s.WG.Device(st.Interface); err == nil {
 		out.TunnelUp = true
 	} else if !errors.Is(err, wg.ErrNoDevice) {
@@ -342,6 +350,7 @@ func (s *Service) AddClient(ctx context.Context, name string) (model.Client, App
 	s.record(ctx, Event{Kind: "client.added", Client: &c, Data: map[string]string{
 		"ipv4": c.IPv4.String(), "ipv6": addrString(c.IPv6),
 	}})
+	s.nudgeAdGuard()
 	return c, s.apply(ctx, "the new client"), nil
 }
 
@@ -378,6 +387,7 @@ func (s *Service) RenameClient(ctx context.Context, ref store.Ref, name string) 
 	}
 	if c.Name != before.Name {
 		s.record(ctx, Event{Kind: "client.renamed", Client: &c, Data: map[string]string{"from": before.Name}})
+		s.nudgeAdGuard()
 	}
 	return c, nil
 }
@@ -389,6 +399,7 @@ func (s *Service) DeleteClient(ctx context.Context, ref store.Ref) (model.Client
 		return model.Client{}, Applied{}, err
 	}
 	s.record(ctx, Event{Kind: "client.deleted", Client: &c})
+	s.nudgeAdGuard()
 	return c, s.apply(ctx, "the deleted client"), nil
 }
 

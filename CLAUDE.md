@@ -43,8 +43,9 @@ setups.** What exists:
   within what an SD card can take. The dashboard, client pages, and log get their status and
   new events from a Server-Sent Events stream (`GET /api/stream`, `internal/api/stream.go`,
   `web/src/lib/live.svelte.ts`), and poll only when it can't be had. Also ahead of the rest of M4
-  (AdGuard Home sync isn't built yet; its API client, `internal/adguard`, and the connection to
-  it, saved and tested from Settings, are).
+  (AdGuard Home integration: the API client `internal/adguard`, the connection saved and tested
+  from Settings, and client name sync, `internal/service/adguardsync.go`, are built; the
+  per-client DNS log isn't).
 - The CLI, which talks to the daemon over the control socket: `server show|set`,
   `client list|add|show|pause|resume|rename|delete|config|qr`, `events`, `doctor`, and
   `admin setup-token|create|reset-password`.
@@ -306,7 +307,14 @@ These are the rules most likely to get silently broken.
   true of every integration, and of anything that later calls AdGuard Home on its own.
 - **Never retry an AdGuard Home 401 on a timer.** Five refusals block the daemon's address for
   15 minutes, and then the right password is refused too ("Verified facts"). A test remembers
-  a refused account for 30 seconds; the sync will stop on a 401 until the connection changes.
+  a refused account for 30 seconds, and the sync stops on a 401 until the connection changes, or
+  a test or Sync now shows the account works (`refusedLogin`). Anything new that calls AdGuard
+  Home on its own must honor `refusedLogin.has` first.
+- **Name sync touches only what Drawbridge made.** An AdGuard Home client it has no record of is
+  never edited or deleted, unless its name and addresses are exactly a client's (adopted without
+  a write). It adds clients with the global settings on, and changes a client by reading it back
+  and changing only its name and addresses. The tests for each of these are in
+  `adguardsync_test.go`; a change to the sync that breaks one is breaking something real.
 - **Secrets stay secret.** Private keys, PSKs, and the setup token are encrypted at rest (the
   `*_enc` columns) and never logged, except the setup token, which the journal shows until the
   admin account exists (§6.5). Session tokens are stored only as SHA-256 hashes. Views never

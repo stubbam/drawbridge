@@ -1176,7 +1176,7 @@
     "/api/integrations/adguard": {
       "get": {
         "summary": "Get the connection to AdGuard Home",
-        "description": "The address, the account's username, and whether a password is saved. The password is never returned. With nothing saved, `base_url` is the usual address of a local AdGuard Home, to start from.",
+        "description": "The address, the account's username, whether a password is saved, the two switches, and how the name sync is doing. The password is never returned. With nothing saved, `base_url` is the usual address of a local AdGuard Home, to start from.",
         "responses": {
           "401": {
             "$ref": "#/components/responses/NotLoggedIn"
@@ -1201,7 +1201,7 @@
       },
       "put": {
         "summary": "Save the connection to AdGuard Home",
-        "description": "Saves the address and the account of an AdGuard Home that Drawbridge may call. Omitted fields stay as they are. It doesn't contact AdGuard Home: the test does that, on values that aren't saved yet. The saved password is sent only to the address and account it was saved with, so changing either takes a password in the same request (400 otherwise). Recorded as an `integration.adguard_changed` event that says the password changed, never what it is.",
+        "description": "Saves the address and the account of an AdGuard Home that Drawbridge may call, and the switches. Omitted fields stay as they are. It doesn't contact AdGuard Home: the test does that, on values that aren't saved yet. Turning the connection on, or changing it while it's on, starts a name sync. The saved password is sent only to the address and account it was saved with, so changing either takes a password in the same request (400 otherwise); the switches take none. Recorded as an `integration.adguard_changed` event that says the password changed, never what it is.",
         "responses": {
           "401": {
             "$ref": "#/components/responses/NotLoggedIn"
@@ -1244,7 +1244,7 @@
       },
       "delete": {
         "summary": "Remove the connection to AdGuard Home",
-        "description": "Forgets the address and the account, and the saved password with them. Removing a connection that isn't there is not an error. Recorded as an `integration.adguard_removed` event.",
+        "description": "Forgets the address and the account, the saved password with them, and the record of the clients Drawbridge named in AdGuard Home. The names it wrote there stay, because it no longer has the account to remove them. Removing a connection that isn't there is not an error. Recorded as an `integration.adguard_removed` event.",
         "responses": {
           "401": {
             "$ref": "#/components/responses/NotLoggedIn"
@@ -1316,6 +1316,38 @@
             }
           }
         }
+      }
+    },
+    "/api/integrations/adguard/sync": {
+      "post": {
+        "summary": "Sync client names with AdGuard Home now",
+        "description": "Runs a pass of the name sync now, for an admin who has just settled a conflict or fixed what stopped it, and returns how it went. It's one attempt: if AdGuard Home refused the account, it isn't tried again for 30 seconds. With the connection off, or name sync off, it does nothing and returns state `off`. The changes it makes are `integration.adguard_name_added`, `…_renamed`, and `…_removed` events.",
+        "responses": {
+          "401": {
+            "$ref": "#/components/responses/NotLoggedIn"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "200": {
+            "description": "How the sync is doing after the pass.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdGuardSync"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "integrations"
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CSRF"
+          }
+        ]
       }
     }
   },
@@ -1706,6 +1738,10 @@
           "online": {
             "type": "integer",
             "description": "Clients with a handshake in the last three minutes."
+          },
+          "adguard_warning": {
+            "type": "string",
+            "description": "Set when the AdGuard Home name sync needs the admin: it can't reach AdGuard Home, AdGuard Home refused the account, or some clients couldn't be named. Absent when all is well, and when the sync is off."
           }
         }
       },
@@ -2096,7 +2132,10 @@
           "configured",
           "base_url",
           "username",
-          "has_password"
+          "has_password",
+          "enabled",
+          "sync_names",
+          "sync"
         ],
         "properties": {
           "configured": {
@@ -2114,6 +2153,17 @@
           "has_password": {
             "type": "boolean",
             "description": "Whether a password is saved. The password itself is never returned."
+          },
+          "enabled": {
+            "type": "boolean",
+            "description": "The admin's switch for using the connection at all. Off until they turn it on."
+          },
+          "sync_names": {
+            "type": "boolean",
+            "description": "Whether Drawbridge writes its clients' names into AdGuard Home. It matters only while `enabled`."
+          },
+          "sync": {
+            "$ref": "#/components/schemas/AdGuardSync"
           }
         }
       },
@@ -2132,6 +2182,14 @@
           "password": {
             "type": "string",
             "description": "Replaces the saved password; an empty string removes it. Required when `base_url` or `username` changes."
+          },
+          "enabled": {
+            "type": "boolean",
+            "description": "Turn the connection on or off. Takes no password."
+          },
+          "sync_names": {
+            "type": "boolean",
+            "description": "Turn name sync on or off. Takes no password."
           }
         }
       },
@@ -2227,6 +2285,68 @@
             "description": "Things that work against what the integration is for, in words for the admin.",
             "items": {
               "type": "string"
+            }
+          }
+        }
+      },
+      "AdGuardSync": {
+        "type": "object",
+        "description": "How the name sync is doing, as of its last pass. Kept in memory: a sync that changes nothing writes nothing.",
+        "required": [
+          "state",
+          "last_sync",
+          "synced",
+          "conflicts"
+        ],
+        "properties": {
+          "state": {
+            "type": "string",
+            "enum": [
+              "off",
+              "pending",
+              "ok",
+              "error",
+              "stopped"
+            ],
+            "description": "`off`: not turned on, or name sync is off. `pending`: on, and no pass has finished yet. `ok`: the last pass finished; some clients may still have conflicts. `error`: the last pass failed, and another is coming. `stopped`: AdGuard Home refused the account, so nothing is asked again until the connection changes or Sync now shows the account works."
+          },
+          "last_sync": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "When a pass last finished without failing; null before the first."
+          },
+          "error": {
+            "type": "string",
+            "description": "Why the last pass failed, in words for the admin."
+          },
+          "synced": {
+            "type": "integer",
+            "description": "How many clients have their name in AdGuard Home."
+          },
+          "conflicts": {
+            "type": "array",
+            "description": "Clients that couldn't be named there, and why: a name or an address that AdGuard Home's own client has. The admin settles them in AdGuard Home.",
+            "items": {
+              "type": "object",
+              "required": [
+                "client_id",
+                "client",
+                "reason"
+              ],
+              "properties": {
+                "client_id": {
+                  "type": "string"
+                },
+                "client": {
+                  "type": "string"
+                },
+                "reason": {
+                  "type": "string"
+                }
+              }
             }
           }
         }

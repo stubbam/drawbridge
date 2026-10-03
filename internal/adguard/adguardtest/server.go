@@ -60,9 +60,11 @@ type Server struct {
 	log     []Entry
 	logCfg  adguard.LogConfig
 	failed  int
-	blocked bool
-	down    bool
-	calls   []string
+	// refusing maps a name to the message AdGuard Home refuses it with (Refuse).
+	refusing map[string]string
+	blocked  bool
+	down     bool
+	calls    []string
 }
 
 // New starts a fake that wants the given account. An empty username means no login.
@@ -160,6 +162,21 @@ func (s *Server) SetLogConfig(enabled, anonymize bool) {
 	s.mu.Lock()
 	s.logCfg = adguard.LogConfig{Enabled: enabled, AnonymizeClientIP: anonymize}
 	s.mu.Unlock()
+}
+
+// Refuse makes adding or updating a client with this name fail with the message, as AdGuard Home
+// does when it won't take something. An empty message ends it.
+func (s *Server) Refuse(name, msg string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if msg == "" {
+		delete(s.refusing, name)
+		return
+	}
+	if s.refusing == nil {
+		s.refusing = map[string]string{}
+	}
+	s.refusing[name] = msg
 }
 
 // Clients returns the persistent clients, sorted by name as AdGuard Home lists them.
@@ -368,6 +385,9 @@ func (s *Server) insert(replacing string, body []byte) error {
 		return fmt.Errorf("%s: empty name", verb)
 	case len(ids) == 0:
 		return fmt.Errorf("%s: id required", verb)
+	}
+	if msg, ok := s.refusing[name]; ok {
+		return fmt.Errorf("%s: %s", verb, msg)
 	}
 	ids = canonicalIDs(ids)
 	for _, id := range ids {

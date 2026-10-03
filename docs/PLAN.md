@@ -12,7 +12,8 @@ in the product name.
 > Status: **M0–M3 are built** (the tunnel, the CLI, the authenticated API, and the web UI), and
 > so are the session tracker and traffic history from M4. The kernel tests pass in CI, and
 > `docs/MANUAL_CHECKLIST.md` records what has run on real hardware. The rest of M4 (the AdGuard
-> Home integration) is next: its API client is built, and name sync and the DNS log are not.
+> Home integration) is nearly done: its API client, the connection, and client name sync are
+> built, and the per-client DNS log is not.
 > `drawbridge doctor`, the first slice of M5, is built too; the diagnostics page isn't.
 > `docs/REQUIREMENTS.md` lists what the host and network need, and the known roadblocks.
 
@@ -552,19 +553,43 @@ AdGuard Home in particular gets an optional integration (below).
     would leave a client's DNS log empty), and what the server's VPN addresses answer for DNS. A
     refused account is remembered for 30 seconds, so a double click can't walk the daemon into
     AdGuard Home's 15-minute block. Saving and removing are events; neither carries the password.
-  - **How name sync works (M4).** Like the reconciler, it's level-triggered: it lists AdGuard
-    Home's persistent clients, compares them with Drawbridge's, and makes up the difference. It
-    runs at startup, shortly after a client is added, renamed, or deleted, and every five
-    minutes, so an AdGuard Home that was down, or a name the admin deleted there, catches up.
-    - **Drawbridge changes only the clients it made.** It records the name and addresses it last
-      wrote for each client (§7), and never edits or deletes a persistent client it has no record
-      of. A client of the same name that Drawbridge didn't make is a conflict, shown in the UI for
-      the admin to settle in AdGuard Home, unless its addresses are exactly the client's, which
-      Drawbridge adopts. AdGuard Home's identifiers the admin added to a client Drawbridge made (a
-      MAC address, say) stay.
+  - **How name sync works (built).** Two switches in Settings: *Use AdGuard Home*, and under it
+    *Name clients in AdGuard Home*. Like the reconciler, it's level-triggered: it lists AdGuard
+    Home's persistent clients, compares them with Drawbridge's, and makes up the difference
+    (`internal/service/adguardsync.go`). It runs at startup, a second after a client is added,
+    renamed, or deleted or the connection changes, and every five minutes, so an AdGuard Home that
+    was down, or a name the admin deleted there, catches up. *Sync now* runs a pass at once.
+    - **Drawbridge changes only the clients it made**, which are the ones it has a record of
+      (§7), and a client whose name and addresses are exactly a Drawbridge client's, which it
+      adopts without a write (a restored database, say). It never edits or deletes any other
+      persistent client. A client of the admin's that has the name or an address a Drawbridge
+      client wants is a *conflict*: shown in Settings and on the dashboard, once in the event log,
+      and settled by the admin in AdGuard Home. The next pass notices.
+    - **A client is added with AdGuard Home's global settings on**, or it isn't ad-blocked. A
+      rename or an address change reads the client back and changes only the name and the
+      addresses, so the admin's tags, upstreams, settings, and added identifiers (a MAC address)
+      stay.
+    - **The admin's changes are repaired**: a name deleted in AdGuard Home comes back, and one
+      renamed there goes back, but only while it still has exactly the addresses Drawbridge gave
+      it. With others added too, it may be the admin's, and it's left alone.
+    - **A deleted client's name is deleted** from AdGuard Home, but only if the client of that name
+      still has an address Drawbridge gave it. One the admin has made into something else stays.
     - Paused clients are synced too, because they keep their addresses.
+    - **A refused account (401) stops the sync**, and nothing is asked until the connection
+      changes, or Test connection or Sync now shows the account works (at most one try in 30
+      seconds), because five refusals block the daemon for 15 minutes. Any other failure retries
+      after 30 seconds, doubling to 5 minutes. A first failure is one event
+      (`integration.adguard_sync_failed`, a warning in the journal), and so is the recovery.
+    - What it does to AdGuard Home is events: `integration.adguard_name_added`, `…_renamed`, and
+      `…_removed`, and `…_name_failed` for a conflict. They're system events, attributed to the
+      admin when *Sync now* started the pass.
     - Its status (the last sync, the error, the conflicts) is kept in memory, and a sync that
-      changes nothing writes nothing, because of the SD card (§6.4).
+      changes nothing writes nothing, because of the SD card (§6.4). The dashboard shows a
+      warning from it (`adguard_warning` in `GET /api/server/status` and the stream) while it
+      can't reach AdGuard Home, was refused, or has conflicts.
+    - Removing the connection forgets the record. What it wrote stays in AdGuard Home, because the
+      account to remove it with is gone. Another address starts the record over, because it's
+      another AdGuard Home.
   - **Per-client DNS log (M4)** shows the client's latest queries from the log, 50 of them: when,
     the name and type, the answer, and whether AdGuard Home blocked it and by what rule. It says
     so when AdGuard Home's log is off or hides client addresses, which would leave the view empty
@@ -607,8 +632,8 @@ page's bandwidth and cumulative charts, and its session-history list are built t
 the whole app, remembered in the browser. A Charts page (an icon in the header, between Clients
 and Server Settings) shows the same history per client, as Received, Sent, Cumulative Received,
 and Cumulative Sent charts, stacked (`GET /api/traffic/clients`). The log viewer's filters and CSV
-export are built too (below), and so are the structured journald fields. AdGuard Home integration
-(§6.3) is still pending.*
+export are built too (below), and so are the structured journald fields. AdGuard Home client
+name sync is built (§6.3); its per-client DNS log is pending.*
 
 ```mermaid
 stateDiagram-v2
@@ -897,12 +922,13 @@ setup_token         (singleton) token_enc, created_at; deleted once the admin ex
 one_time_links      token_hash PK, client_id, expires_at, used_at NULL        (M6)
 api_tokens          id, name, token_hash, scopes, created_at, last_used_at    (M6)
 dns_integration     (singleton) kind ('adguard'), base_url, username ('' for no login),
-                    password_enc NULL, updated_at. `enabled` and `sync_names` come with
-                    the sync                                                   (M4)
+                    password_enc NULL, enabled (default off), sync_names (default on),
+                    updated_at                                                 (M4)
 dns_integration_clients
                     client_id PK, name, ids JSON: what sync last wrote for a client, so
                     it changes only what it made. No foreign key: a deleted client's row is
-                    how sync knows to delete its name. The sync's status isn't stored.  (M4)
+                    how sync knows to delete its name. Gone with the connection, or when
+                    its address changes. The sync's status isn't stored.       (M4)
 schema_migrations   version, applied_at
 ```
 
@@ -951,6 +977,8 @@ GET    /api/integrations/adguard         PUT /api/integrations/adguard     (M4)
 DELETE /api/integrations/adguard         forget the connection and the password
 POST   /api/integrations/adguard/test    asks AdGuard Home who it is, and the VPN addresses for
                                          DNS; saves nothing. A failure is a 200 with `ok` false
+POST   /api/integrations/adguard/sync    names the clients in AdGuard Home now; returns how the
+                                         sync is doing (also in GET /api/integrations/adguard)
 
 Later:
 POST   /api/auth/totp/enroll | /verify                                    (M5)
@@ -1201,7 +1229,8 @@ Each milestone ends in a usable, tested state.
   *Built: the session tracker, its three events, and `client_sessions`; traffic sampling with
   rollup and retention, the dashboard, client-detail, and Charts pages, and the log viewer's
   filters and CSV export (§6.4), structured journald fields, the write-budget test, and the SSE
-  stream. The AdGuard Home client is built (§6.3); name sync and the DNS log aren't.*
+  stream. The AdGuard Home client, the connection, and client name sync are built (§6.3); the
+  per-client DNS log isn't.*
 - AdGuard Home integration: client name sync and the per-client DNS log.
 - **Exit:**
   - Connect, disconnect, and roam events are correct in simulated tests and on real hardware,

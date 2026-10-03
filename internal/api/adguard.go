@@ -10,13 +10,26 @@ import (
 
 // The connection to AdGuard Home (docs/PLAN.md §6.3). The password can be set and never read back.
 
-func (h *handler) getAdGuard(w http.ResponseWriter, r *http.Request) {
+// adguardView is the saved connection and how its sync is doing.
+func (h *handler) adguardView(r *http.Request) (views.AdGuardConnection, error) {
 	c, err := h.svc.AdGuard(r.Context())
+	if err != nil {
+		return views.AdGuardConnection{}, err
+	}
+	sync, err := h.svc.AdGuardSync(r.Context())
+	if err != nil {
+		return views.AdGuardConnection{}, err
+	}
+	return views.NewAdGuardConnection(c, sync), nil
+}
+
+func (h *handler) getAdGuard(w http.ResponseWriter, r *http.Request) {
+	v, err := h.adguardView(r)
 	if err != nil {
 		h.fail(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, views.NewAdGuardConnection(c))
+	writeJSON(w, http.StatusOK, v)
 }
 
 func (h *handler) putAdGuard(w http.ResponseWriter, r *http.Request) {
@@ -25,12 +38,16 @@ func (h *handler) putAdGuard(w http.ResponseWriter, r *http.Request) {
 		h.fail(w, err)
 		return
 	}
-	c, err := h.svc.UpdateAdGuard(r.Context(), req.Service())
+	if _, err := h.svc.UpdateAdGuard(r.Context(), req.Service()); err != nil {
+		h.fail(w, err)
+		return
+	}
+	v, err := h.adguardView(r)
 	if err != nil {
 		h.fail(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, views.NewAdGuardConnection(c))
+	writeJSON(w, http.StatusOK, v)
 }
 
 func (h *handler) deleteAdGuard(w http.ResponseWriter, r *http.Request) {
@@ -38,12 +55,22 @@ func (h *handler) deleteAdGuard(w http.ResponseWriter, r *http.Request) {
 		h.fail(w, err)
 		return
 	}
-	c, err := h.svc.AdGuard(r.Context())
+	v, err := h.adguardView(r)
 	if err != nil {
 		h.fail(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, views.NewAdGuardConnection(c))
+	writeJSON(w, http.StatusOK, v)
+}
+
+// syncAdGuard runs a pass of the name sync now, and says how it went.
+func (h *handler) syncAdGuard(w http.ResponseWriter, r *http.Request) {
+	st, err := h.svc.SyncAdGuardNow(r.Context())
+	if err != nil {
+		h.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, views.NewAdGuardSync(st))
 }
 
 func (h *handler) testAdGuard(w http.ResponseWriter, r *http.Request) {

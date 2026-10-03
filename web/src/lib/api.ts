@@ -174,6 +174,24 @@ export interface DNSLog {
 	warnings: string[];
 }
 
+/** A read-only API token. Its secret isn't here: it's shown once, when the token is made. */
+export interface APIToken {
+	id: string;
+	name: string;
+	/** The first 8 characters of the secret, to tell one token from another. */
+	prefix: string;
+	scope: 'read';
+	created_at: string;
+	/** Null until the token is first used, and then accurate to the hour. */
+	last_used_at: string | null;
+}
+
+export interface NewAPITokenResult {
+	token: APIToken;
+	/** The token itself. This response is the only place it ever appears. */
+	secret: string;
+}
+
 export interface Peer {
 	endpoint?: string;
 	last_handshake?: string;
@@ -381,6 +399,11 @@ export const api = {
 	me: () => request<Me>('GET', '/api/auth/me'),
 	changePassword: (current_password: string, new_password: string) =>
 		request<void>('POST', '/api/auth/password', { current_password, new_password }),
+	apiTokens: () => request<APIToken[]>('GET', '/api/auth/tokens'),
+	createApiToken: (name: string, password: string) =>
+		request<NewAPITokenResult>('POST', '/api/auth/tokens', { name, password }),
+	revokeApiToken: (id: string) =>
+		request<void>('DELETE', `/api/auth/tokens/${encodeURIComponent(id)}`),
 	sessions: () => request<Session[]>('GET', '/api/auth/sessions'),
 	revokeSession: (id: string) =>
 		request<void>('DELETE', `/api/auth/sessions/${encodeURIComponent(id)}`),

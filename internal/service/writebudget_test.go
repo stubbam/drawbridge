@@ -150,6 +150,9 @@ type workload struct {
 	// adminTab is a browser tab left open on the dashboard, which asks the daemon for the
 	// clients every five seconds, all day.
 	adminTab bool
+	// apiToken is a dashboard such as Homepage that asks for the status with a read-only API
+	// token every ten seconds, all day.
+	apiToken bool
 }
 
 // connectedAt says whether client i of the workload is connected at a time of day.
@@ -213,9 +216,19 @@ func simulate(t *testing.T, s *Service, clk *clock, dbPath string, w workload, s
 	}
 
 	var password string
-	if w.adminTab {
+	if w.adminTab || w.apiToken {
 		var err error
 		if password, err = s.CreateAdmin(ctx, "admin"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var secret string
+	if w.apiToken {
+		admin, err := s.Store.OnlyUser(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, secret, err = s.CreateAPIToken(ctx, admin, password, "dashboard"); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -256,6 +269,12 @@ func simulate(t *testing.T, s *Service, clk *clock, dbPath string, w workload, s
 			if w.adminTab {
 				askForClients()
 			}
+			if w.apiToken && n%2 == 0 {
+				// The dashboard's ask: the daemon checks the token, and notes its use once an hour.
+				if _, err := s.AuthenticateToken(ctx, secret); err != nil {
+					t.Fatal(err)
+				}
+			}
 			s.TrackConnections(ctx)
 			if n%int(driftEvery/pollEvery) == 0 {
 				s.Sync(ctx)
@@ -290,9 +309,9 @@ const (
 )
 
 var (
-	// A household's VPN: a few devices that stay connected, a few that come and go, and a
-	// browser tab left on the dashboard.
-	typicalHousehold = workload{alwaysOn: 5, commuters: 5, adminTab: true}
+	// A household's VPN: a few devices that stay connected, a few that come and go, a browser
+	// tab left on the dashboard, and a dashboard on the home page that polls with an API token.
+	typicalHousehold = workload{alwaysOn: 5, commuters: 5, adminTab: true, apiToken: true}
 	// Twice the clients, all connected all day.
 	busyHousehold = workload{alwaysOn: 20, adminTab: true}
 	// Clients that never connect.

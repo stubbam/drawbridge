@@ -672,3 +672,48 @@ func NewDNSLog(l service.DNSLog) DNSLog {
 	out.Warnings = append(out.Warnings, l.Warnings...)
 	return out
 }
+
+// APIToken is a read-only API token, without its secret (docs/PLAN.md §6.5). The secret is shown
+// once, when the token is made, and kept nowhere.
+type APIToken struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	// Prefix is the start of the secret, to tell one token from another.
+	Prefix    string    `json:"prefix"`
+	Scope     string    `json:"scope"`
+	CreatedAt time.Time `json:"created_at"`
+	// LastUsedAt is null until the token is first used, and then is accurate to the hour.
+	LastUsedAt *time.Time `json:"last_used_at"`
+}
+
+// NewAPIToken converts a stored token.
+func NewAPIToken(t store.APIToken) APIToken {
+	out := APIToken{ID: t.ID, Name: t.Name, Prefix: t.Prefix, Scope: t.Scope, CreatedAt: t.CreatedAt.UTC()}
+	if !t.LastUsedAt.IsZero() {
+		used := t.LastUsedAt.UTC()
+		out.LastUsedAt = &used
+	}
+	return out
+}
+
+// APITokens converts a list of stored tokens.
+func APITokens(list []store.APIToken) []APIToken {
+	out := make([]APIToken, len(list))
+	for i, t := range list {
+		out[i] = NewAPIToken(t)
+	}
+	return out
+}
+
+// NewAPITokenRequest makes a token. It takes the password again, even in a logged-in session,
+// because a token outlives the session.
+type NewAPITokenRequest struct {
+	Name     string `json:"name"`
+	Password string `json:"password"`
+}
+
+// NewAPITokenResult is a new token and its secret, the only time the secret is shown.
+type NewAPITokenResult struct {
+	Token  APIToken `json:"token"`
+	Secret string   `json:"secret"`
+}

@@ -141,3 +141,48 @@ func ValidatePassword(p string) error {
 }
 
 func invalid(err error) error { return &model.InvalidError{Err: err} }
+
+// APITokenPrefix starts every API token, so that one is recognizable in a config file, and a
+// secret scanner can look for it.
+const APITokenPrefix = "dbt_"
+
+// apiTokenLength is the length of an API token: the prefix and 32 random bytes, encoded.
+const apiTokenLength = len(APITokenPrefix) + 43
+
+// apiTokenShown is how many characters of a token are kept to recognize it by: the prefix and
+// four of the random ones.
+const apiTokenShown = len(APITokenPrefix) + 4
+
+// NewAPIToken returns a random API token (256 bits), its hash for the database, and the start
+// of it that the admin sees in a list.
+func NewAPIToken() (token, prefix string, hash []byte, err error) {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return "", "", nil, err
+	}
+	token = APITokenPrefix + base64.RawURLEncoding.EncodeToString(b)
+	return token, token[:apiTokenShown], HashToken(token), nil
+}
+
+// LooksLikeAPIToken reports whether s has the shape of an API token, so that anything else can
+// be refused without a lookup.
+func LooksLikeAPIToken(s string) bool {
+	if len(s) != apiTokenLength || !strings.HasPrefix(s, APITokenPrefix) {
+		return false
+	}
+	for _, r := range s[len(APITokenPrefix):] {
+		if !isTokenChar(r) {
+			return false
+		}
+	}
+	return true
+}
+
+// isTokenChar reports whether r is in base64's URL-safe alphabet, without the padding.
+func isTokenChar(r rune) bool {
+	switch {
+	case 'A' <= r && r <= 'Z', 'a' <= r && r <= 'z', '0' <= r && r <= '9', r == '-', r == '_':
+		return true
+	}
+	return false
+}

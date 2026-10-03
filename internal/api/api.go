@@ -56,6 +56,9 @@ var routes = []route{
 	{"POST", "/api/auth/logout", false, (*handler).logout},
 	{"GET", "/api/auth/me", false, (*handler).me},
 	{"POST", "/api/auth/password", false, (*handler).changePassword},
+	{"GET", "/api/auth/tokens", false, (*handler).listTokens},
+	{"POST", "/api/auth/tokens", false, (*handler).createToken},
+	{"DELETE", "/api/auth/tokens/{id}", false, (*handler).revokeToken},
 	{"GET", "/api/auth/sessions", false, (*handler).sessions},
 	{"DELETE", "/api/auth/sessions/{id}", false, (*handler).revokeSession},
 	{"GET", "/api/server", false, (*handler).getServer},
@@ -97,7 +100,7 @@ func New(opts Options) http.Handler {
 			fn := rt.handler
 			var next http.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { fn(h, w, r) })
 			if !rt.public {
-				next = h.requireSession(next)
+				next = h.requireAuth(rt.method+" "+rt.pattern, next)
 			}
 			mux.Handle(rt.method+" "+rt.pattern, h.checkCSRF(next))
 		}

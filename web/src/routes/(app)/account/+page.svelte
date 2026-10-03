@@ -5,6 +5,7 @@
 	import { api, type Session } from '$lib/api';
 	import { errorMessage } from '$lib/errors';
 	import { describeUserAgent, formatAgo, formatTime } from '$lib/format';
+	import APITokens from '$lib/components/APITokens.svelte';
 	import Result from '$lib/components/Result.svelte';
 
 	let { data } = $props();
@@ -143,3 +144,5 @@
 		{/each}
 	</ul>
 </section>
+
+<APITokens username={data.me.user.username} />

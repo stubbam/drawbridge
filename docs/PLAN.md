@@ -859,8 +859,33 @@ stateDiagram-v2
     Only the TCP connection's source address counts, so a spoofed private source that got past the
     router would pass; the router's WAN side must drop those.
   - An optional stricter mode allows VPN access only.
-- **One admin account** in v1.0 (decided). Multiple admins and API tokens for automation are
-  optional (M6).
+- **One admin account** in v1.0 (decided). Multiple admins are optional (M6).
+- **Read-only API tokens (built ahead of M6)**, for a dashboard such as Homepage that can send a
+  header but can't log in (docs/api-tokens.md):
+  - A token is `dbt_` and 256 random bits. It's shown once, when it's made, and only its SHA-256
+    hash is stored, as for a session. The first 8 characters are kept to tell tokens apart.
+  - **It reads a short, fixed list of GET routes and nothing else**: the status, the clients, and
+    their traffic. The list is in the code (`tokenReadable`, `internal/api/tokens.go`) and is
+    closed by default, so a new route can't be reached by a token until someone adds it, and a
+    test names what can never be on it: a client's config (its private key), its DNS log, the
+    event log, the settings, the integrations, and the account routes, tokens' own included. A
+    token can't change anything, and can't make, list, or revoke tokens.
+  - **Making one takes the password again**, even in a logged-in session, because a token
+    outlives the session and a password change; a hijacked session mustn't be able to leave one
+    behind. Wrong passwords count against the login limits. An account has at most 20, with names
+    that differ in more than case.
+  - A request that carries a token is a token's request, whatever else it carries: a session
+    cookie sent along doesn't widen it, and a bad token isn't rescued by one.
+  - It's held to the same network limits as the web UI (the allowlist and the nftables rule, D11):
+    a dashboard in Docker on the host connects from Docker's network, which has to be added with
+    `--admin-allow`.
+  - Its last use is written at most once an hour, because a dashboard asks every few seconds and
+    each write is a commit on an SD card (§6.4). `TestWriteBudget` has a dashboard polling every
+    ten seconds all day.
+  - Revoking it, on the Account page, takes effect at once. A password reset from the command
+    line revokes them all; a routine password change doesn't, so it doesn't break dashboards.
+  - Events: `auth.token_created`, `auth.token_revoked`, `auth.token_failed` (a wrong password),
+    and `auth.tokens_revoked` (by a reset). None carries the token.
 
 ### 6.6 System
 
@@ -935,7 +960,9 @@ auth_sessions       id PK (public, for revoking), token_hash UNIQUE, user_id, cr
                     last_seen_at, expires_at, ip, user_agent
 setup_token         (singleton) token_enc, created_at; deleted once the admin exists
 one_time_links      token_hash PK, client_id, expires_at, used_at NULL        (M6)
-api_tokens          id, name, token_hash, scopes, created_at, last_used_at    (M6)
+api_tokens          id PK, user_id, name (unique, in any case), prefix, token_hash UNIQUE
+                    (SHA-256), scope ('read', the only one), created_at, last_used_at
+                    NULL until first used, written at most hourly   (built ahead of M6)
 dns_integration     (singleton) kind ('adguard'), base_url, username ('' for no login),
                     password_enc NULL, enabled (default off), sync_names (default on),
                     updated_at                                                 (M4)
@@ -967,6 +994,9 @@ GET    /api/setup                        POST /api/setup      (first run, needs 
 POST   /api/auth/login | /api/auth/logout                      GET /api/auth/me
 POST   /api/auth/password                change the password; ends the other sessions
 GET    /api/auth/sessions                DELETE /api/auth/sessions/{id}
+GET    /api/auth/tokens                  POST /api/auth/tokens   DELETE /api/auth/tokens/{id}
+                                         read-only API tokens (§6.5). Making one takes the
+                                         password again, and shows the secret once
 
 GET    /api/server                       PATCH /api/server    (settings)
 GET    /api/server/status                tunnel up or down, client counts (M3)
@@ -1052,7 +1082,8 @@ home LAN. The UI is therefore treated as a high-value target:
   - Names, which can contain arbitrary text, never appear in the nftables or WireGuard files.
     This prevents injection through newlines or quotes.
 - **Secrets:**
-  - Private keys and PSKs are encrypted at rest, and the DB file is 0600.
+  - Private keys and PSKs are encrypted at rest, and the DB file is 0600. Session and API
+    tokens are stored only as SHA-256 hashes.
   - Storing client private keys is optional ("show once, never store").
   - Secrets are never logged, and the config and QR views are logged as events.
 - **Transport:** HTTPS only. The admin UI allowlist defaults to private ranges and the VPN
@@ -1278,7 +1309,7 @@ Each milestone ends in a usable, tested state.
 - AdGuard Home extras: a per-client ad-blocking switch and client hostnames (DNS rewrites).
 - A Pi-hole integration (its v6 API), if wanted: the same name sync and DNS log through the
   provider seam (§6.3), after checking its API on a live instance as AdGuard Home's was.
-- Prometheus metrics, API tokens, and multiple admins.
+- Prometheus metrics and multiple admins. (Read-only API tokens are built: §6.5.)
 - Import from `wg-quick` or wg-easy.
 - Opt-in flow logging, GeoIP, i18n, and multiple WireGuard interfaces.
 

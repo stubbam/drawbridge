@@ -56,7 +56,8 @@ setups.** What exists:
   comparison of the endpoint's A record with the current public IPv4 address (docs/PLAN.md §16).
 - The authenticated JSON API over HTTPS on port 51821 (`internal/api/openapi.json`): first-run
   setup, sessions, server settings, clients, and the event log, reachable only from the LAN and
-  the VPN.
+  the VPN. A dashboard that can't log in (Homepage) reads the status with a read-only API token,
+  made on the Account page (docs/api-tokens.md).
 - The web UI: setup (account, endpoint, and a DNS step that checks whether the host answers DNS
   on the VPN addresses), login, dashboard, clients (QR codes and downloads), settings (DNS
   included), logs, and account.
@@ -306,6 +307,15 @@ These are the rules most likely to get silently broken.
   sent (`accountFor`, `internal/service/adguard.go`). Without that, a hijacked session could
   point the address at its own server and have the daemon send over the saved password. Keep it
   true of every integration, and of anything that later calls AdGuard Home on its own.
+- **API tokens are read-only, and closed by default.** A token reaches only the GET routes in
+  `tokenReadable` (`internal/api/tokens.go`): the status, the clients, and their traffic. Never
+  add a client's config (it has the private key), its DNS log, the events, the stream, the
+  settings, the integrations, or anything under `/api/auth`. A test names them and caps the
+  list, so adding to it is a decision you have to make out loud, and a test checks that the
+  OpenAPI document (`security`) says the same. A request that carries a token is a token's
+  request whatever else it has: a cookie doesn't widen it. Making a token takes the password
+  again, because it outlives a session. Its last use is written once an hour, not per request,
+  and `TestWriteBudget` polls with one to keep it so.
 - **Never retry an AdGuard Home 401 on a timer.** Five refusals block the daemon's address for
   15 minutes, and then the right password is refused too ("Verified facts"). A test remembers
   a refused account for 30 seconds, and the sync stops on a 401 until the connection changes, or
@@ -318,8 +328,9 @@ These are the rules most likely to get silently broken.
   `adguardsync_test.go`; a change to the sync that breaks one is breaking something real.
 - **Secrets stay secret.** Private keys, PSKs, and the setup token are encrypted at rest (the
   `*_enc` columns) and never logged, except the setup token, which the journal shows until the
-  admin account exists (§6.5). Session tokens are stored only as SHA-256 hashes. Views never
-  carry keys, and a 500 response never carries the internal error; the journal does (§7, §10).
+  admin account exists (§6.5). Session tokens and API tokens are stored only as SHA-256 hashes,
+  and an API token is shown once, when it's made. Views never carry keys, and a 500 response
+  never carries the internal error; the journal does (§7, §10).
 
 ## Verified facts, worth not re-deriving
 
@@ -496,6 +507,7 @@ the router allows inbound UDP 51820 to the host's stable address (with a real cl
 - `docs/adr/` holds one decision record per decision in the plan's §3 (D1–D12).
 - `docs/MANUAL_CHECKLIST.md` records what has actually run on real hardware.
 - `docs/REQUIREMENTS.md` lists what a host and network need, and the known roadblocks.
+- `docs/api-tokens.md` is the admin's guide to read-only API tokens and getting Homepage to use one.
 - `cmd/drawbridge/` is the binary: `serve` (serve.go), `tunnel`, `server`, `client`,
   `events` and `admin` (admin_cmd.go), `doctor` (doctor_cmd.go), `version`, and `help`.
 - The core engine, in `internal/`:

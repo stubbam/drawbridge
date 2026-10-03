@@ -6,6 +6,8 @@ export interface AdGuardForm {
 	username: string;
 	/** Empty means "keep the saved one": the server never sends it back. */
 	password: string;
+	enabled: boolean;
+	syncNames: boolean;
 }
 
 /**
@@ -17,6 +19,8 @@ export function adguardRequest(saved: AdGuardConnection, f: AdGuardForm): AdGuar
 	if (f.baseUrl.trim() !== saved.base_url) r.base_url = f.baseUrl.trim();
 	if (f.username.trim() !== saved.username) r.username = f.username.trim();
 	if (f.password !== '') r.password = f.password;
+	if (f.enabled !== saved.enabled) r.enabled = f.enabled;
+	if (f.syncNames !== saved.sync_names) r.sync_names = f.syncNames;
 	return r;
 }
 

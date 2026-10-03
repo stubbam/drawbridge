@@ -97,11 +97,21 @@ describe('events', () => {
 		const labels = (category?: DrawbridgeEvent['category']) =>
 			eventKinds(category).map((k) => k.label);
 		expect(labels('connection')).toEqual(['Connected', 'Disconnected', 'Roamed']);
-		expect(labels('system')).toEqual(['Corrected drift']);
+		expect(labels('system')).toEqual([
+			'Named a client in AdGuard Home',
+			'Renamed a client in AdGuard Home',
+			'Removed a client from AdGuard Home',
+			"Couldn't name a client in AdGuard Home",
+			'AdGuard Home sync failed',
+			'AdGuard Home sync recovered',
+			'Corrected drift'
+		]);
 		expect(labels('admin')).toContain('Failed login');
 		expect(labels('admin')).not.toContain('Connected');
 		// With no category, every kind, each with a label of its own.
-		expect(labels()).toHaveLength(labels('admin').length + 4);
+		expect(labels()).toHaveLength(
+			labels('admin').length + labels('connection').length + labels('system').length
+		);
 		expect(eventKinds('').map((k) => k.kind)).toContain('client.connected');
 		for (const { kind, label } of eventKinds()) expect(eventLabel(kind)).toBe(label);
 	});

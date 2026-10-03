@@ -6,9 +6,18 @@ const saved: AdGuardConnection = {
 	configured: true,
 	base_url: 'http://127.0.0.1:3000/control',
 	username: 'drawbridge',
-	has_password: true
+	has_password: true,
+	enabled: true,
+	sync_names: true,
+	sync: { state: 'ok', last_sync: null, synced: 0, conflicts: [] }
 };
-const same = { baseUrl: saved.base_url, username: saved.username, password: '' };
+const same = {
+	baseUrl: saved.base_url,
+	username: saved.username,
+	password: '',
+	enabled: true,
+	syncNames: true
+};
 
 describe('adguardRequest', () => {
 	it('sends nothing when nothing changed', () => {
@@ -20,6 +29,12 @@ describe('adguardRequest', () => {
 			base_url: 'http://192.0.2.7:3000'
 		});
 		expect(adguardRequest(saved, { ...same, username: ' other ' })).toEqual({ username: 'other' });
+	});
+
+	it('sends the switches when they change, and takes no password for them', () => {
+		expect(adguardRequest(saved, { ...same, enabled: false })).toEqual({ enabled: false });
+		expect(adguardRequest(saved, { ...same, syncNames: false })).toEqual({ sync_names: false });
+		expect(needsPassword(saved, { ...same, enabled: false, syncNames: false })).toBe(false);
 	});
 
 	it('sends a password only when one is typed, as typed', () => {

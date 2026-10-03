@@ -103,3 +103,65 @@ func TestAdGuardConnectionFlow(t *testing.T) {
 		t.Errorf("events = %+v, want the removal recorded once", list)
 	}
 }
+
+func bp(b bool) *bool { return &b }
+
+func TestAdGuardSyncFlow(t *testing.T) {
+	svc := newService(t)
+	srv := newServer(t, svc)
+	b, _ := loggedIn(t, svc, srv)
+	fake := adguardtest.New(t, "drawbridge", "s3cret-pass")
+	// An AdGuard Home client of the admin's, with a name a Drawbridge client is about to want.
+	if err := fake.AddRaw(`{"name":"tablet","ids":["192.0.2.60"]}`); err != nil {
+		t.Fatal(err)
+	}
+
+	// Saved, and not on: nothing is synced, and the usual defaults show.
+	var conn views.AdGuardConnection
+	b.expect(http.StatusOK, "PUT", "/api/integrations/adguard", views.AdGuardRequest{
+		BaseURL: sp(fake.URL()), Username: sp("drawbridge"), Password: sp("s3cret-pass"),
+	}).decode(t, &conn)
+	if conn.Enabled || !conn.SyncNames || conn.Sync.State != "off" || conn.Sync.Conflicts == nil {
+		t.Fatalf("saved connection = %+v", conn)
+	}
+	var sync views.AdGuardSync
+	b.expect(http.StatusOK, "POST", "/api/integrations/adguard/sync", nil).decode(t, &sync)
+	if sync.State != "off" || len(fake.Calls()) != 0 {
+		t.Fatalf("a sync while off = %+v, calls %v", sync, fake.Calls())
+	}
+
+	// Turning it on takes no password, and the clients are named by a pass.
+	b.expect(http.StatusCreated, "POST", "/api/clients", views.NewClientRequest{Name: "phone"})
+	b.expect(http.StatusCreated, "POST", "/api/clients", views.NewClientRequest{Name: "tablet"})
+	b.expect(http.StatusOK, "PUT", "/api/integrations/adguard", views.AdGuardRequest{Enabled: bp(true)}).decode(t, &conn)
+	if !conn.Enabled || conn.Sync.State != "pending" || conn.Sync.LastSync != nil {
+		t.Fatalf("turned on = %+v", conn)
+	}
+	b.expect(http.StatusOK, "POST", "/api/integrations/adguard/sync", nil).decode(t, &sync)
+	if sync.State != "ok" || sync.Synced != 1 || sync.LastSync == nil || len(sync.Conflicts) != 1 ||
+		sync.Conflicts[0].Client != "tablet" || !strings.Contains(sync.Conflicts[0].Reason, "didn't make") {
+		t.Fatalf("sync = %+v", sync)
+	}
+	if _, ok := fake.Client("phone"); !ok {
+		t.Error("the client wasn't named in AdGuard Home")
+	}
+	if p, _ := fake.Client("tablet"); len(p.IDs) != 1 {
+		t.Errorf("the admin's own client was changed: %+v", p)
+	}
+	b.expect(http.StatusOK, "GET", "/api/integrations/adguard", nil).decode(t, &conn)
+	if conn.Sync.State != "ok" || conn.Sync.Synced != 1 {
+		t.Errorf("GET shows %+v", conn.Sync)
+	}
+
+	// What the sync changed is in the log, as the daemon's own work, started by the admin.
+	var events []views.EventView
+	b.expect(http.StatusOK, "GET", "/api/events?kind=integration.adguard_name_added", nil).decode(t, &events)
+	if len(events) != 1 || events[0].ClientName != "phone" || events[0].Category != "system" || events[0].Actor != "admin" {
+		t.Errorf("events = %+v", events)
+	}
+	// And the switches are in the connection's own change events.
+	b.expect(http.StatusOK, "GET", "/api/events?kind=integration.adguard_changed&limit=1", nil).decode(t, &events)
+	if len(events) != 1 || events[0].Data["enabled"] != "off → on" {
+		t.Errorf("events = %+v", events)
+	}
+}

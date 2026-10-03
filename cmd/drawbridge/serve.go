@@ -299,6 +299,11 @@ func (d daemon) run(ctx context.Context) error {
 			defer wg.Done()
 			d.trafficRetentionLoop(loopCtx)
 		}()
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			d.svc.RunAdGuardSync(loopCtx)
+		}()
 	}
 
 	d.log.Info("Drawbridge started", "version", version.String(), "address", d.web.Addr().String(), "tls", d.tls != nil)

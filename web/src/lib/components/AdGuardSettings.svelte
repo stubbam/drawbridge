@@ -6,13 +6,16 @@
 	import { api, type AdGuardConnection, type AdGuardTest } from '$lib/api';
 	import { adguardRequest, needsPassword } from '$lib/adguard';
 	import { errorMessage } from '$lib/errors';
+	import { formatTime } from '$lib/format';
 	import Result from './Result.svelte';
 
 	let saved = $state<AdGuardConnection>();
 	let baseUrl = $state('');
 	let username = $state('');
 	let password = $state('');
-	let busy = $state<'' | 'save' | 'test' | 'remove'>('');
+	let enabled = $state(false);
+	let syncNames = $state(true);
+	let busy = $state<'' | 'save' | 'test' | 'sync' | 'remove'>('');
 	let confirmRemove = $state(false);
 	let error = $state('');
 	let success = $state('');
@@ -23,13 +26,15 @@
 		baseUrl = c.base_url;
 		username = c.username;
 		password = '';
+		enabled = c.enabled;
+		syncNames = c.sync_names;
 	}
 
 	onMount(() => {
 		api.adguard().then(fill, (err) => (error = errorMessage(err)));
 	});
 
-	const form = $derived({ baseUrl, username, password });
+	const form = $derived({ baseUrl, username, password, enabled, syncNames });
 	const askPassword = $derived(saved ? needsPassword(saved, form) : false);
 
 	/** A result describes the values it was run on, so it goes when they change. */
@@ -54,7 +59,18 @@
 	async function save(e: SubmitEvent) {
 		e.preventDefault();
 		if (!saved) return;
-		const c = await run('save', () => api.saveAdGuard(adguardRequest(saved!, form)));
+		const c = await run('save', async () => {
+			const c = await api.saveAdGuard(adguardRequest(saved!, form));
+			if (c.enabled && c.sync_names) {
+				// The save starts a sync a second later. Ask for it now, to show how it went.
+				try {
+					c.sync = await api.syncAdGuard();
+				} catch {
+					// The saved connection stands, and the status below says what the sync is doing.
+				}
+			}
+			return c;
+		});
 		if (c) {
 			fill(c);
 			test = undefined;
@@ -66,6 +82,11 @@
 		if (!saved) return;
 		const t = await run('test', () => api.testAdGuard(adguardRequest(saved!, form)));
 		if (t) test = t;
+	}
+
+	async function syncNow() {
+		const s = await run('sync', () => api.syncAdGuard());
+		if (s && saved) saved = { ...saved, sync: s };
 	}
 
 	async function remove() {
@@ -148,6 +169,30 @@
 			</div>
 		</div>
 
+		<div class="flex flex-col gap-3">
+			<label class="flex items-start gap-2 text-sm">
+				<input type="checkbox" class="mt-0.5" bind:checked={enabled} />
+				<span>
+					<span class="font-medium">Use AdGuard Home</span>
+					<span class="hint block">
+						Turn it on once Test connection works. The features that need AdGuard Home use this
+						connection.
+					</span>
+				</span>
+			</label>
+			<label class="ml-6 flex items-start gap-2 text-sm">
+				<input type="checkbox" class="mt-0.5" bind:checked={syncNames} disabled={!enabled} />
+				<span>
+					<span class="font-medium">Name clients in AdGuard Home</span>
+					<span class="hint block">
+						Adds each client under its name and its VPN addresses, so AdGuard Home's query log and
+						statistics say "phone" and not 10.8.0.23. Drawbridge changes only the clients it adds
+						there, and keeps whatever else you set on them.
+					</span>
+				</span>
+			</label>
+		</div>
+
 		<div class="flex flex-wrap items-center gap-2">
 			<button class="btn btn-primary" type="submit" disabled={busy !== ''}>
 				{busy === 'save' ? 'Saving…' : 'Save connection'}
@@ -155,6 +200,11 @@
 			<button class="btn" type="button" onclick={runTest} disabled={busy !== ''}>
 				{busy === 'test' ? 'Testing…' : 'Test connection'}
 			</button>
+			{#if saved.enabled && saved.sync_names}
+				<button class="btn" type="button" onclick={syncNow} disabled={busy !== ''}>
+					{busy === 'sync' ? 'Syncing…' : 'Sync now'}
+				</button>
+			{/if}
 			{#if saved.configured}
 				{#if confirmRemove}
 					<span class="text-sm">Forget the address and the password?</span>
@@ -169,6 +219,43 @@
 		</div>
 
 		<Result {error} {success} />
+
+		{#if saved.enabled && saved.sync_names}
+			{@const sync = saved.sync}
+			<div class="flex flex-col gap-2 text-sm" data-testid="adguard-sync" aria-live="polite">
+				{#if sync.state === 'ok'}
+					<p>
+						{sync.last_sync ? `Synced ${formatTime(sync.last_sync)}: ` : ''}{sync.synced}
+						{sync.synced === 1 ? 'client has' : 'clients have'} their name in AdGuard Home.
+					</p>
+				{:else if sync.state === 'pending'}
+					<p class="hint">Waiting for the first sync…</p>
+				{:else if sync.state === 'error'}
+					<p class="alert-error" role="alert">
+						Couldn't sync: {sync.error}. Drawbridge tries again soon.
+					</p>
+				{:else if sync.state === 'stopped'}
+					<p class="alert-error" role="alert">
+						{sync.error}. Drawbridge isn't asking again until the connection changes, or Test
+						connection or Sync now shows it works.
+					</p>
+				{/if}
+				{#if sync.conflicts.length > 0}
+					<div class="alert-warning" role="status">
+						<p class="font-medium">
+							{sync.conflicts.length === 1 ? 'One client' : `${sync.conflicts.length} clients`} couldn't
+							be named, so Drawbridge left AdGuard Home as it is:
+						</p>
+						<ul class="list-disc pl-5">
+							{#each sync.conflicts as c (c.client_id)}
+								<li><span class="font-medium">{c.client}</span>: {c.reason}</li>
+							{/each}
+						</ul>
+						<p>Settle them in AdGuard Home, then press Sync now.</p>
+					</div>
+				{/if}
+			</div>
+		{/if}
 
 		{#if test}
 			<div class="flex flex-col gap-2 text-sm" data-testid="adguard-test" aria-live="polite">

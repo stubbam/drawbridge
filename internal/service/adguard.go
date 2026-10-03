@@ -26,6 +26,11 @@ type AdGuardConnection struct {
 	BaseURL     string
 	Username    string
 	HasPassword bool
+	// Enabled is the admin's switch for using the connection at all: off until they turn it on.
+	Enabled bool
+	// SyncNames is whether Drawbridge writes its clients' names into AdGuard Home. It matters
+	// only while Enabled.
+	SyncNames bool
 }
 
 // AdGuard returns the saved connection to AdGuard Home.
@@ -39,9 +44,12 @@ func (s *Service) AdGuard(ctx context.Context) (AdGuardConnection, error) {
 
 func adguardConnection(in store.DNSIntegration, ok bool) AdGuardConnection {
 	if !ok || in.Kind != store.KindAdGuard {
-		return AdGuardConnection{BaseURL: adguard.DefaultBaseURL}
+		return AdGuardConnection{BaseURL: adguard.DefaultBaseURL, SyncNames: true}
 	}
-	return AdGuardConnection{Configured: true, BaseURL: in.BaseURL, Username: in.Username, HasPassword: in.Password != ""}
+	return AdGuardConnection{
+		Configured: true, BaseURL: in.BaseURL, Username: in.Username, HasPassword: in.Password != "",
+		Enabled: in.Enabled, SyncNames: in.SyncNames,
+	}
 }
 
 // AdGuardPatch changes the connection, or says what to test. Nil fields stay as they are.
@@ -50,6 +58,9 @@ type AdGuardPatch struct {
 	Username *string
 	// Password replaces the saved one; "" removes it.
 	Password *string
+	// Enabled and SyncNames are the switches (AdGuardConnection). They don't move the password,
+	// so changing them takes none.
+	Enabled, SyncNames *bool
 }
 
 // adguardAccount is what the client calls AdGuard Home with.
@@ -124,13 +135,24 @@ func checkCredential(what, v string, max int) error {
 }
 
 // UpdateAdGuard saves the connection to AdGuard Home. It doesn't ask AdGuard Home anything: the
-// test does that, and it works on values that aren't saved yet.
+// test does that, and it works on values that aren't saved yet. Turning the connection on, or
+// changing it while it's on, starts a sync.
 func (s *Service) UpdateAdGuard(ctx context.Context, p AdGuardPatch) (AdGuardConnection, error) {
 	acct, saved, had, err := s.accountFor(ctx, p)
 	if err != nil {
 		return AdGuardConnection{}, err
 	}
-	next := store.DNSIntegration{Kind: store.KindAdGuard, BaseURL: acct.BaseURL, Username: acct.Username, Password: acct.Password}
+	prev := adguardConnection(saved, had)
+	next := store.DNSIntegration{
+		Kind: store.KindAdGuard, BaseURL: acct.BaseURL, Username: acct.Username, Password: acct.Password,
+		Enabled: prev.Enabled, SyncNames: prev.SyncNames,
+	}
+	if p.Enabled != nil {
+		next.Enabled = *p.Enabled
+	}
+	if p.SyncNames != nil {
+		next.SyncNames = *p.SyncNames
+	}
 	changes := map[string]string{}
 	if !had {
 		changes["address"] = "none → " + next.BaseURL
@@ -155,6 +177,12 @@ func (s *Service) UpdateAdGuard(ctx context.Context, p AdGuardPatch) (AdGuardCon
 	default:
 		changes["password"] = "changed"
 	}
+	if next.Enabled != prev.Enabled {
+		changes["enabled"] = onOff(prev.Enabled) + " → " + onOff(next.Enabled)
+	}
+	if next.SyncNames != prev.SyncNames {
+		changes["sync_names"] = onOff(prev.SyncNames) + " → " + onOff(next.SyncNames)
+	}
 	if len(changes) == 0 {
 		return adguardConnection(next, true), nil
 	}
@@ -162,7 +190,16 @@ func (s *Service) UpdateAdGuard(ctx context.Context, p AdGuardPatch) (AdGuardCon
 		return AdGuardConnection{}, err
 	}
 	s.record(ctx, Event{Kind: "integration.adguard_changed", Data: changes})
+	s.adguardSync.reset()
+	s.nudgeAdGuard()
 	return adguardConnection(next, true), nil
+}
+
+func onOff(b bool) string {
+	if b {
+		return "on"
+	}
+	return "off"
 }
 
 // RemoveAdGuard forgets the connection to AdGuard Home, and its password with it. It's not an
@@ -176,6 +213,8 @@ func (s *Service) RemoveAdGuard(ctx context.Context) error {
 		return err
 	}
 	s.record(ctx, Event{Kind: "integration.adguard_removed", Data: map[string]string{"address": saved.BaseURL}})
+	s.adguardSync.reset()
+	s.nudgeAdGuard()
 	return nil
 }
 
@@ -237,8 +276,13 @@ func (s *Service) TestAdGuard(ctx context.Context, p AdGuardPatch) (AdGuardTest,
 		}
 	}()
 	res := checkAdGuard(ctx, c)
-	if res.Refused {
+	switch {
+	case res.Refused:
 		s.adguardRefused.remember(key, s.now())
+	case res.OK:
+		// The account works, so a sync that stopped on it can go on.
+		s.adguardRefused.forget(key)
+		s.nudgeAdGuard()
 	}
 	wg.Wait()
 	res.DNS = probes
@@ -295,6 +339,23 @@ type refusedLogin struct {
 func (r *refusedLogin) remember(key string, now time.Time) {
 	r.mu.Lock()
 	r.key, r.at = key, now
+	r.mu.Unlock()
+}
+
+// has reports whether the account with this key is the one that was refused, however long ago.
+// The sync stops on it until the account changes, or a test shows it works.
+func (r *refusedLogin) has(key string) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.key != "" && r.key == key
+}
+
+// forget drops the refusal of the account with this key.
+func (r *refusedLogin) forget(key string) {
+	r.mu.Lock()
+	if r.key == key {
+		r.key = ""
+	}
 	r.mu.Unlock()
 }
 

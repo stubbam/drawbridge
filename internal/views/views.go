@@ -400,11 +400,15 @@ type ServerStatus struct {
 	Paused   int  `json:"paused"`
 	// Online counts clients with a handshake in the last three minutes.
 	Online int `json:"online"`
+	// AdGuardWarning is set when the AdGuard Home name sync needs the admin: it can't reach
+	// AdGuard Home, was refused, or couldn't name some clients.
+	AdGuardWarning string `json:"adguard_warning,omitempty"`
 }
 
 // NewServerStatus converts the service's status.
 func NewServerStatus(s service.Status) ServerStatus {
-	return ServerStatus{TunnelUp: s.TunnelUp, Clients: s.Clients, Paused: s.Paused, Online: s.Online}
+	return ServerStatus{TunnelUp: s.TunnelUp, Clients: s.Clients, Paused: s.Paused, Online: s.Online,
+		AdGuardWarning: s.AdGuardWarning}
 }
 
 // StreamStatus is the stream's "status" message: what the dashboard, the client list, and a
@@ -504,8 +508,8 @@ func ClientSessions(cs []store.ClientSession) []ClientSessionView {
 	return out
 }
 
-// AdGuardConnection is the saved connection to AdGuard Home (docs/PLAN.md §6.3). The password
-// isn't in it: it can be set, and never read back.
+// AdGuardConnection is the saved connection to AdGuard Home (docs/PLAN.md §6.3), and how the name
+// sync is doing. The password isn't in it: it can be set, and never read back.
 type AdGuardConnection struct {
 	// Configured is whether a connection is saved. When it isn't, BaseURL is the usual address
 	// of a local AdGuard Home, to start from.
@@ -513,11 +517,51 @@ type AdGuardConnection struct {
 	BaseURL     string `json:"base_url"`
 	Username    string `json:"username"`
 	HasPassword bool   `json:"has_password"`
+	// Enabled is the admin's switch for using the connection at all, and SyncNames whether
+	// Drawbridge writes its clients' names into AdGuard Home.
+	Enabled   bool        `json:"enabled"`
+	SyncNames bool        `json:"sync_names"`
+	Sync      AdGuardSync `json:"sync"`
 }
 
-// NewAdGuardConnection converts the service's connection.
-func NewAdGuardConnection(c service.AdGuardConnection) AdGuardConnection {
-	return AdGuardConnection(c)
+// NewAdGuardConnection converts the service's connection and sync status.
+func NewAdGuardConnection(c service.AdGuardConnection, sync service.AdGuardSyncStatus) AdGuardConnection {
+	return AdGuardConnection{
+		Configured: c.Configured, BaseURL: c.BaseURL, Username: c.Username, HasPassword: c.HasPassword,
+		Enabled: c.Enabled, SyncNames: c.SyncNames, Sync: NewAdGuardSync(sync),
+	}
+}
+
+// AdGuardSync is how the name sync is doing: off, pending, ok, error (retrying), or stopped
+// (AdGuard Home refused the account).
+type AdGuardSync struct {
+	State string `json:"state"`
+	// LastSync is when a pass last finished without failing; null before the first.
+	LastSync *time.Time `json:"last_sync"`
+	Error    string     `json:"error,omitempty"`
+	// Synced is how many clients have their name in AdGuard Home.
+	Synced    int               `json:"synced"`
+	Conflicts []AdGuardConflict `json:"conflicts"`
+}
+
+// AdGuardConflict is a client the sync couldn't name in AdGuard Home, and why.
+type AdGuardConflict struct {
+	ClientID string `json:"client_id"`
+	Client   string `json:"client"`
+	Reason   string `json:"reason"`
+}
+
+// NewAdGuardSync converts the service's sync status.
+func NewAdGuardSync(st service.AdGuardSyncStatus) AdGuardSync {
+	out := AdGuardSync{State: st.State, Error: st.Error, Synced: st.Synced, Conflicts: []AdGuardConflict{}}
+	if !st.LastSync.IsZero() {
+		t := st.LastSync.UTC()
+		out.LastSync = &t
+	}
+	for _, c := range st.Conflicts {
+		out.Conflicts = append(out.Conflicts, AdGuardConflict(c))
+	}
+	return out
 }
 
 // AdGuardRequest saves or tests a connection. Omitted fields stay as they are. A password
@@ -527,11 +571,15 @@ type AdGuardRequest struct {
 	BaseURL  *string `json:"base_url"`
 	Username *string `json:"username"`
 	Password *string `json:"password"`
+	// Enabled and SyncNames are the switches; they move no password, so they take none.
+	Enabled   *bool `json:"enabled"`
+	SyncNames *bool `json:"sync_names"`
 }
 
 // Service returns the request as the service takes it.
 func (r AdGuardRequest) Service() service.AdGuardPatch {
-	return service.AdGuardPatch{BaseURL: r.BaseURL, Username: r.Username, Password: r.Password}
+	return service.AdGuardPatch{BaseURL: r.BaseURL, Username: r.Username, Password: r.Password,
+		Enabled: r.Enabled, SyncNames: r.SyncNames}
 }
 
 // AdGuardQueryLog is how AdGuard Home's query log is set.

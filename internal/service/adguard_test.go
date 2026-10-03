@@ -61,7 +61,7 @@ func TestUpdateAdGuardSavesAndRecordsWithoutThePassword(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := (AdGuardConnection{Configured: true, BaseURL: "http://127.0.0.1:3000/control", Username: "drawbridge", HasPassword: true}); got != want {
+	if want := (AdGuardConnection{Configured: true, BaseURL: "http://127.0.0.1:3000/control", Username: "drawbridge", HasPassword: true, SyncNames: true}); got != want {
 		t.Errorf("UpdateAdGuard = %+v, want %+v", got, want)
 	}
 	in, ok, _ := s.Store.DNSIntegration(ctx)

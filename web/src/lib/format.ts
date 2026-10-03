@@ -136,6 +136,36 @@ const eventTypes: { kind: string; category: DrawbridgeEvent['category']; label: 
 		category: 'admin',
 		label: 'Removed the AdGuard Home connection'
 	},
+	{
+		kind: 'integration.adguard_name_added',
+		category: 'system',
+		label: 'Named a client in AdGuard Home'
+	},
+	{
+		kind: 'integration.adguard_name_renamed',
+		category: 'system',
+		label: 'Renamed a client in AdGuard Home'
+	},
+	{
+		kind: 'integration.adguard_name_removed',
+		category: 'system',
+		label: 'Removed a client from AdGuard Home'
+	},
+	{
+		kind: 'integration.adguard_name_failed',
+		category: 'system',
+		label: "Couldn't name a client in AdGuard Home"
+	},
+	{
+		kind: 'integration.adguard_sync_failed',
+		category: 'system',
+		label: 'AdGuard Home sync failed'
+	},
+	{
+		kind: 'integration.adguard_sync_recovered',
+		category: 'system',
+		label: 'AdGuard Home sync recovered'
+	},
 	{ kind: 'auth.setup_completed', category: 'admin', label: 'Completed setup' },
 	{ kind: 'auth.setup_failed', category: 'admin', label: 'Failed setup (wrong token)' },
 	{ kind: 'auth.login', category: 'admin', label: 'Logged in' },

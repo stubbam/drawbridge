@@ -460,3 +460,18 @@ nothing here is `[VERIFIED]` yet.
 - `[UNVERIFIED]` Remove forgets the connection: after it, the form shows the usual address and no
   username, and `sqlite3 /var/lib/drawbridge/drawbridge.db 'select count(*) from dns_integration'`
   (as the `drawbridge` user) says 0.
+- `[UNVERIFIED]` Name sync on the reference platform's AdGuard Home. Turn on *Use AdGuard Home*
+  and Save: every client appears in AdGuard Home (Settings → Client settings) under its name,
+  with its IPv4 and IPv6 addresses, and AdGuard Home's query log and statistics show the name
+  where they showed `10.8.0.x`. A client of the admin's own is left exactly as it was.
+- `[UNVERIFIED]` A synced client is still ad-blocked: from a phone on the VPN, a domain on one of
+  AdGuard Home's block lists doesn't load, as before the sync. (In a container, with real DNS
+  queries, a synced client's blocked domain was answered `0.0.0.0` like any other address.)
+- `[UNVERIFIED]` Renaming a client in Drawbridge renames it in AdGuard Home within a few
+  seconds, keeping tags, upstreams, and settings set there. Deleting it deletes its name.
+- `[UNVERIFIED]` With a client of the admin's named like a Drawbridge client, Settings and the
+  dashboard say one client couldn't be named, and nothing in AdGuard Home changes. Deleting the
+  admin's client there, then *Sync now*, names the Drawbridge client.
+- `[UNVERIFIED]` With AdGuard Home stopped (`sudo systemctl stop AdGuardHome`), the dashboard says
+  Drawbridge can't sync, the journal has one `integration adguard sync failed` warning, and starting
+  it again clears both within about 5 minutes (or at once with *Sync now*).

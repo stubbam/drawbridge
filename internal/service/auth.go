@@ -325,8 +325,18 @@ func (s *Service) ResetPassword(ctx context.Context, username string) (store.Use
 	if err := s.Store.SetPassword(ctx, u.ID, hash, ""); err != nil {
 		return store.User{}, "", err
 	}
+	// A reset is taking the account back, so it takes back every credential made under the old
+	// password, API tokens included. A password change doesn't: that's routine, and it would
+	// break the dashboards.
+	revoked, err := s.Store.DeleteAPITokens(ctx, u.ID)
+	if err != nil {
+		return store.User{}, "", err
+	}
 	s.Limiter.Succeed(auth.AccountKey(u.ID))
 	s.record(ctx, Event{Kind: "auth.password_reset", Data: map[string]string{"username": u.Username}})
+	if revoked > 0 {
+		s.record(ctx, Event{Kind: "auth.tokens_revoked", Data: map[string]string{"count": fmt.Sprint(revoked)}})
+	}
 	return u, password, nil
 }
 

@@ -209,7 +209,7 @@ func TestOpenAPIDocumentsEveryRoute(t *testing.T) {
 		t.Fatalf("openapi.json isn't valid JSON: %v", err)
 	}
 	type operation struct {
-		Security   *[]any
+		Security   *[]map[string]any
 		Parameters []struct {
 			Ref string `json:"$ref"`
 		}
@@ -236,6 +236,18 @@ func TestOpenAPIDocumentsEveryRoute(t *testing.T) {
 		}
 		if public := op.Security != nil && len(*op.Security) == 0; public != rt.public {
 			t.Errorf("%s: openapi.json says public %v, the route table says %v", key, public, rt.public)
+		}
+		// The operations that say an API token works are the ones the middleware lets a token in
+		// to, so the document can't promise a client what the server refuses.
+		takesToken := false
+		if op.Security != nil {
+			for _, scheme := range *op.Security {
+				_, ok := scheme["token"]
+				takesToken = takesToken || ok
+			}
+		}
+		if takesToken != tokenReadable[key] {
+			t.Errorf("%s: openapi.json says a token works %v, tokenReadable says %v", key, takesToken, tokenReadable[key])
 		}
 		method, _, _ := strings.Cut(key, " ")
 		csrf := false

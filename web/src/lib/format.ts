@@ -175,6 +175,18 @@ const eventTypes: { kind: string; category: DrawbridgeEvent['category']; label: 
 	{ kind: 'auth.password_reset', category: 'admin', label: 'Reset the password (CLI)' },
 	{ kind: 'auth.admin_created', category: 'admin', label: 'Created the admin account (CLI)' },
 	{ kind: 'auth.session_revoked', category: 'admin', label: 'Revoked a session' },
+	{ kind: 'auth.token_created', category: 'admin', label: 'Made an API token' },
+	{ kind: 'auth.token_revoked', category: 'admin', label: 'Revoked an API token' },
+	{
+		kind: 'auth.token_failed',
+		category: 'admin',
+		label: 'Failed to make an API token (wrong password)'
+	},
+	{
+		kind: 'auth.tokens_revoked',
+		category: 'admin',
+		label: 'Revoked every API token (password reset)'
+	},
 	{ kind: 'tunnel.drift_corrected', category: 'system', label: 'Corrected drift' }
 ];
 

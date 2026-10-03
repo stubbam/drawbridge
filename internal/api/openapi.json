@@ -3,7 +3,7 @@
   "info": {
     "title": "Drawbridge API",
     "version": "0.0.0",
-    "description": "The API behind Drawbridge's web UI (docs/PLAN.md §8).\n\nIt's served only to the home network and the VPN, over HTTPS on port 51821. Log in with POST /api/auth/login; the session is a cookie, `__Host-drawbridge`. Every request that changes something needs the `X-Drawbridge` header (any value) and, when it has a body, `Content-Type: application/json`."
+    "description": "The API behind Drawbridge's web UI (docs/PLAN.md §8).\n\nIt's served only to the home network and the VPN, over HTTPS on port 51821. Log in with POST /api/auth/login; the session is a cookie, `__Host-drawbridge`. Every request that changes something needs the `X-Drawbridge` header (any value) and, when it has a body, `Content-Type: application/json`.\n\nA dashboard that can't log in can use a read-only API token instead: make one on the Account page, and send it as `Authorization: Bearer dbt_…`. It works on a short list of GET endpoints (marked below with the `token` security scheme) and is refused everywhere else with 403: it can't read a client's config or DNS log, can't change anything, and can't make or revoke tokens. A token that doesn't exist or was revoked gets 401. It is subject to the same network limits as the web UI."
   },
   "tags": [
     {
@@ -501,7 +501,16 @@
         },
         "tags": [
           "server"
-        ]
+        ],
+        "security": [
+          {
+            "session": []
+          },
+          {
+            "token": []
+          }
+        ],
+        "description": "Also readable with a read-only API token."
       }
     },
     "/api/server/dns-check": {
@@ -557,7 +566,16 @@
         },
         "tags": [
           "clients"
-        ]
+        ],
+        "security": [
+          {
+            "session": []
+          },
+          {
+            "token": []
+          }
+        ],
+        "description": "Also readable with a read-only API token."
       },
       "post": {
         "summary": "Add a client",
@@ -644,7 +662,16 @@
           {
             "$ref": "#/components/parameters/ClientID"
           }
-        ]
+        ],
+        "security": [
+          {
+            "session": []
+          },
+          {
+            "token": []
+          }
+        ],
+        "description": "Also readable with a read-only API token."
       },
       "patch": {
         "summary": "Rename a client",
@@ -889,7 +916,16 @@
           {
             "$ref": "#/components/parameters/TrafficRange"
           }
-        ]
+        ],
+        "security": [
+          {
+            "session": []
+          },
+          {
+            "token": []
+          }
+        ],
+        "description": "Also readable with a read-only API token."
       }
     },
     "/api/clients/{id}/sessions": {
@@ -948,7 +984,16 @@
               "default": 100
             }
           }
-        ]
+        ],
+        "security": [
+          {
+            "session": []
+          },
+          {
+            "token": []
+          }
+        ],
+        "description": "Also readable with a read-only API token."
       }
     },
     "/api/traffic": {
@@ -982,7 +1027,16 @@
           {
             "$ref": "#/components/parameters/TrafficRange"
           }
-        ]
+        ],
+        "security": [
+          {
+            "session": []
+          },
+          {
+            "token": []
+          }
+        ],
+        "description": "Also readable with a read-only API token."
       }
     },
     "/api/traffic/clients": {
@@ -1016,7 +1070,16 @@
           {
             "$ref": "#/components/parameters/TrafficRange"
           }
-        ]
+        ],
+        "security": [
+          {
+            "session": []
+          },
+          {
+            "token": []
+          }
+        ],
+        "description": "Also readable with a read-only API token."
       }
     },
     "/api/events": {
@@ -1401,6 +1464,128 @@
         },
         "tags": [
           "clients"
+        ]
+      }
+    },
+    "/api/auth/tokens": {
+      "get": {
+        "summary": "API tokens",
+        "description": "The account's read-only API tokens, newest first. A token's secret is never in the list: it is shown once, when the token is made. Not available to an API token.",
+        "responses": {
+          "401": {
+            "$ref": "#/components/responses/NotLoggedIn"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "200": {
+            "description": "Newest first.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/APIToken"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "auth"
+        ]
+      },
+      "post": {
+        "summary": "Make an API token",
+        "description": "Makes a read-only API token and returns its secret, **once**: only a hash is kept. It takes the account's password again even in a logged-in session, because a token outlives the session and a password change; wrong attempts count against the login limits (429). At most 20 tokens, with names that differ (in any case). Recorded as an `auth.token_created` event that names the token and never carries the secret. Not available to an API token.",
+        "responses": {
+          "401": {
+            "$ref": "#/components/responses/NotLoggedIn"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "400": {
+            "$ref": "#/components/responses/Invalid"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "description": "Too many wrong passwords; see Retry-After.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "The token, and its secret.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NewAPITokenResult"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "auth"
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CSRF"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NewAPIToken"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/tokens/{id}": {
+      "delete": {
+        "summary": "Revoke an API token",
+        "description": "Ends the token at once. Recorded as an `auth.token_revoked` event. Not available to an API token.",
+        "responses": {
+          "401": {
+            "$ref": "#/components/responses/NotLoggedIn"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "204": {
+            "description": "Revoked."
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        },
+        "tags": [
+          "auth"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/CSRF"
+          }
         ]
       }
     }
@@ -2506,6 +2691,82 @@
             "description": "Why an empty list is empty, when AdGuard Home's query-log settings are the reason (it's off, or it hides client addresses)."
           }
         }
+      },
+      "APIToken": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "prefix",
+          "scope",
+          "created_at",
+          "last_used_at"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string",
+            "description": "What the admin called it, such as the dashboard it's for."
+          },
+          "prefix": {
+            "type": "string",
+            "description": "The first 8 characters of the secret, to tell one token from another."
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "read"
+            ]
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "last_used_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "Null until the token is first used, and then accurate to the hour: it is written at most once an hour."
+          }
+        }
+      },
+      "NewAPIToken": {
+        "type": "object",
+        "required": [
+          "name",
+          "password"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "password": {
+            "type": "string",
+            "description": "The account's current password."
+          }
+        }
+      },
+      "NewAPITokenResult": {
+        "type": "object",
+        "required": [
+          "token",
+          "secret"
+        ],
+        "properties": {
+          "token": {
+            "$ref": "#/components/schemas/APIToken"
+          },
+          "secret": {
+            "type": "string",
+            "description": "The token itself, `dbt_` and 43 characters. Shown only in this response: copy it now."
+          }
+        }
       }
     },
     "securitySchemes": {
@@ -2513,6 +2774,12 @@
         "type": "apiKey",
         "in": "cookie",
         "name": "__Host-drawbridge"
+      },
+      "token": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "dbt_ and 43 characters",
+        "description": "A read-only API token (docs/PLAN.md §6.5), made on the Account page and shown once. Accepted only by the operations that list it; any other gets 403."
       }
     },
     "parameters": {
